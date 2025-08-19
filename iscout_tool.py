@@ -117,10 +117,10 @@ class CompanySearcher:
             help="Enable this to search real companies using Google Places API (requires API key)"
         )
         
-        if use_real_search and GOOGLE_PLACES_API_KEY:
+        if use_real_search and (GOOGLE_PLACES_API_KEY or st.session_state.get('api_key')):
             st.info("🔍 Searching real companies... This may take a moment.")
             return self.search_real_companies()
-        elif use_real_search and not GOOGLE_PLACES_API_KEY:
+        elif use_real_search and not (GOOGLE_PLACES_API_KEY or st.session_state.get('api_key')):
             st.sidebar.error("❌ Google Places API key required for real search")
             st.sidebar.info("Add your API key in the sidebar above")
             return self.generate_sample_companies()
@@ -131,7 +131,10 @@ class CompanySearcher:
         """Search for real companies using Google Places API"""
         all_companies = []
         
-        if not GOOGLE_PLACES_API_KEY:
+        # Check for API key in session state or environment
+        api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
+        
+        if not api_key:
             st.error("🔑 Google Places API key is required for real search")
             return []
         
@@ -171,7 +174,10 @@ class CompanySearcher:
     
     def search_google_places_text(self, query: str) -> List[Dict]:
         """Search Google Places using text search"""
-        if not GOOGLE_PLACES_API_KEY:
+        # Check for API key in session state or environment
+        api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
+        
+        if not api_key:
             return []
         
         companies = []
@@ -182,7 +188,7 @@ class CompanySearcher:
         
         headers = {
             'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+            'X-Goog-Api-Key': api_key,
             'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount'
         }
         
@@ -445,10 +451,8 @@ def main():
             help="Make sure to enable 'Places API (New)'"
         )
         if api_key_input:
-            # This is a simple workaround for session
+            # Store in session state for this session
             st.session_state.api_key = api_key_input
-            global GOOGLE_PLACES_API_KEY
-            GOOGLE_PLACES_API_KEY = api_key_input
     else:
         st.sidebar.success("✅ API key configured")
     
