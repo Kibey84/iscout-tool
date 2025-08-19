@@ -82,20 +82,38 @@ class CompanySearcher:
             'total_score': 0
         }
         
+        # Higher value keywords for serious naval suppliers
+        high_value_keywords = {
+            'defense': 5, 'naval': 5, 'aerospace': 4, 'military': 4,
+            'contractor': 3, 'corporation': 2, 'industries': 2,
+            'technologies': 2, 'systems': 2, 'solutions': 2
+        }
+        
         # Score manufacturing relevance
         for keyword in self.config.manufacturing_keywords:
             if keyword.lower() in combined_text:
                 scores['manufacturing_score'] += 1
         
-        # Score robotics relevance
+        # Score robotics relevance  
         for keyword in self.config.robotics_keywords:
             if keyword.lower() in combined_text:
-                scores['robotics_score'] += 2  # Higher weight for robotics
+                scores['robotics_score'] += 2
         
         # Score unmanned systems relevance
         for keyword in self.config.unmanned_keywords:
             if keyword.lower() in combined_text:
-                scores['unmanned_score'] += 3  # Highest weight for unmanned
+                scores['unmanned_score'] += 3
+        
+        # Bonus points for high-value keywords
+        for keyword, bonus in high_value_keywords.items():
+            if keyword in combined_text:
+                scores['manufacturing_score'] += bonus
+        
+        # Penalty for small operations
+        small_operation_keywords = ['mobile', 'roadside', 'auto', 'truck', 'trailer']
+        for keyword in small_operation_keywords:
+            if keyword in combined_text:
+                scores['manufacturing_score'] = max(0, scores['manufacturing_score'] - 3)
         
         scores['total_score'] = (scores['manufacturing_score'] + 
                                scores['robotics_score'] + 
@@ -104,27 +122,16 @@ class CompanySearcher:
         return scores
     
     def search_companies(self) -> List[Dict]:
-        """Main search function - can use real API or demo data"""
+        """Main search function - uses real API if available, otherwise demo data"""
         
-        # Check if we should force demo mode
-        if st.session_state.get('force_demo', False):
-            return self.generate_sample_companies()
+        # Check for API key in session state or environment
+        api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
         
-        # Check if we should use real API search
-        use_real_search = st.sidebar.checkbox(
-            "🔍 Use Real Company Search", 
-            value=False,
-            help="Enable this to search real companies using Google Places API (requires API key)"
-        )
-        
-        if use_real_search and (GOOGLE_PLACES_API_KEY or st.session_state.get('api_key')):
-            st.info("🔍 Searching real companies... This may take a moment.")
+        if api_key:
+            st.info("🔍 Searching real companies using Google Places API...")
             return self.search_real_companies()
-        elif use_real_search and not (GOOGLE_PLACES_API_KEY or st.session_state.get('api_key')):
-            st.sidebar.error("❌ Google Places API key required for real search")
-            st.sidebar.info("Add your API key in the sidebar above")
-            return self.generate_sample_companies()
         else:
+            st.info("📋 Using demo data. Add API key in sidebar for real company search.")
             return self.generate_sample_companies()
     
     def search_real_companies(self) -> List[Dict]:
@@ -138,13 +145,29 @@ class CompanySearcher:
             st.error("🔑 Google Places API key is required for real search")
             return []
         
-        # Search queries
-        search_queries = ["manufacturing", "metal fabrication", "machining", "welding"]
+        # More targeted search queries for naval suppliers
+        search_queries = [
+            "defense contractors manufacturing",
+            "aerospace manufacturing companies", 
+            "naval shipbuilding suppliers",
+            "military manufacturing",
+            "precision machining defense",
+            "industrial automation companies",
+            "metal fabrication defense contractors",
+            "robotics manufacturing companies",
+            "additive manufacturing 3D printing"
+        ]
         
-        for query in search_queries:
+        progress_bar = st.progress(0)
+        
+        for i, query in enumerate(search_queries):
+            st.write(f"Searching: {query}")
             companies = self.search_google_places_text(query)
             all_companies.extend(companies)
+            progress_bar.progress((i + 1) / len(search_queries))
             time.sleep(1)  # Rate limiting
+        
+        progress_bar.empty()
         
         # Remove duplicates and process
         unique_companies = []
@@ -163,8 +186,8 @@ class CompanySearcher:
                 scores = self._score_company_relevance(company)
                 company.update(scores)
                 
-                # Filter by distance
-                if distance <= self.config.radius_miles:
+                # Filter by distance and minimum relevance
+                if distance <= self.config.radius_miles and company['total_score'] >= 1:
                     unique_companies.append(company)
         
         # Sort by relevance score
@@ -249,15 +272,42 @@ class CompanySearcher:
         name_lower = name.lower()
         types_str = ' '.join(types).lower()
         
-        manufacturing_keywords = [
-            'manufacturing', 'fabrication', 'machining', 'welding', 'metal',
-            'precision', 'cnc', 'automation', 'robotics', 'industrial',
-            'engineering', 'machine', 'tool', 'assembly', 'production'
+        # Exclude small welding/repair shops
+        exclude_keywords = [
+            'mobile welding', 'roadside', 'automotive repair', 'auto repair',
+            'truck repair', 'trailer repair', 'small engine', 'lawn mower'
         ]
         
+        for exclude in exclude_keywords:
+            if exclude in name_lower:
+                return False
+        
+        # Look for serious manufacturing companies
+        manufacturing_keywords = [
+            'manufacturing', 'fabrication', 'machining', 'industrial',
+            'aerospace', 'defense', 'precision', 'cnc', 'automation', 
+            'robotics', 'engineering', 'systems', 'technologies',
+            'corporation', 'industries', 'solutions'
+        ]
+        
+        # Also look for business types that indicate larger operations
+        business_types = [
+            'manufacturer', 'contractor', 'engineering', 'technology',
+            'industrial', 'aerospace', 'defense'
+        ]
+        
+        # Check name and types
         for keyword in manufacturing_keywords:
-            if keyword in name_lower or keyword in types_str:
+            if keyword in name_lower:
                 return True
+                
+        for btype in business_types:
+            if btype in types_str:
+                return True
+        
+        # Special case: if it has "welding" but also "fabrication" or "manufacturing"
+        if 'welding' in name_lower and ('fabrication' in name_lower or 'manufacturing' in name_lower):
+            return True
         
         return False
     
@@ -439,22 +489,23 @@ def main():
     
     # API Key input if not found
     if not GOOGLE_PLACES_API_KEY:
-        st.sidebar.info("🔑 To enable real company search, add your Google Places API key:")
-        st.sidebar.markdown("**Steps:**")
+        st.sidebar.warning("⚠️ No API key detected")
+        st.sidebar.info("🔑 Add your Google Places API key for real company search:")
+        st.sidebar.markdown("**Quick Setup:**")
         st.sidebar.markdown("1. Go to [Google Cloud Console](https://console.cloud.google.com)")
-        st.sidebar.markdown("2. Enable 'Places API (New)'")
-        st.sidebar.markdown("3. Create an API key")
-        st.sidebar.markdown("4. Paste it below:")
+        st.sidebar.markdown("2. Enable 'Places API (New)' + Billing")
+        st.sidebar.markdown("3. Create API key and paste below:")
         api_key_input = st.sidebar.text_input(
             "Google Places API Key:", 
             type="password",
-            help="Make sure to enable 'Places API (New)'"
+            help="Real companies will be searched automatically when key is provided"
         )
         if api_key_input:
             # Store in session state for this session
             st.session_state.api_key = api_key_input
+            st.sidebar.success("✅ API key added! Search will use real companies.")
     else:
-        st.sidebar.success("✅ API key configured")
+        st.sidebar.success("✅ API key configured - using real company search")
     
     config = SearchConfig()
     
