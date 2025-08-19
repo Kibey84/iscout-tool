@@ -43,6 +43,14 @@ class SearchConfig:
         "drone", "autonomous vehicles", "unmanned vehicles",
         "remote systems", "autonomous systems"
     ])
+    
+    workforce_keywords: List[str] = field(default_factory=lambda: [
+        "naval training", "maritime training", "shipyard training", "welding certification",
+        "maritime academy", "technical training", "apprenticeship", "workforce development",
+        "skills training", "industrial training", "safety training", "crane operator training",
+        "maritime safety", "naval education", "defense training", "military training",
+        "shipbuilding training", "marine engineering training", "technical certification"
+    ])
 
 class CompanySearcher:
     def __init__(self, config: SearchConfig):
@@ -79,6 +87,7 @@ class CompanySearcher:
             'manufacturing_score': 0,
             'robotics_score': 0,
             'unmanned_score': 0,
+            'workforce_score': 0,
             'total_score': 0
         }
         
@@ -110,6 +119,14 @@ class CompanySearcher:
             'uuv': 5, 'usv': 5, 'remote': 2, 'guidance': 3
         }
         
+        # Workforce and training (naval-specific)
+        workforce_keywords = {
+            'training': 4, 'academy': 5, 'certification': 4, 'apprenticeship': 4,
+            'workforce': 3, 'education': 3, 'maritime training': 6, 'naval training': 7,
+            'shipyard training': 6, 'welding certification': 5, 'safety training': 4,
+            'technical training': 4, 'skills development': 3, 'crane operator': 4
+        }
+        
         # Score based on company name and type (most reliable data we have)
         for keyword, points in high_value_name_keywords.items():
             if keyword in name:
@@ -126,6 +143,10 @@ class CompanySearcher:
         for keyword, points in unmanned_keywords.items():
             if keyword in combined_text:
                 scores['unmanned_score'] += points
+        
+        for keyword, points in workforce_keywords.items():
+            if keyword in combined_text:
+                scores['workforce_score'] += points
         
         # Bonus for known defense contractors and aerospace companies
         major_contractors = [
@@ -156,7 +177,8 @@ class CompanySearcher:
         
         scores['total_score'] = (scores['manufacturing_score'] + 
                                scores['robotics_score'] + 
-                               scores['unmanned_score'])
+                               scores['unmanned_score'] +
+                               scores['workforce_score'])
         
         return scores
     
@@ -184,19 +206,27 @@ class CompanySearcher:
             st.error("🔑 Google Places API key is required for real search")
             return []
         
-        # More targeted search queries for naval suppliers
+        # More targeted search queries including small business terms
         search_queries = [
             "Honeywell Aerospace",
             "Boeing manufacturing", 
             "Lockheed Martin",
-            "Raytheon Technologies",
             "defense contractors",
             "aerospace manufacturing",
             "precision machining companies",
-            "industrial automation",
             "CNC machining services",
-            "metal fabrication companies",
-            "engineering services companies"
+            "metal fabrication LLC",
+            "machine shop",
+            "custom manufacturing",
+            "specialty manufacturing",
+            "contract manufacturing",
+            "precision manufacturing Inc",
+            "maritime academy",
+            "naval training center",
+            "shipyard training",
+            "welding certification",
+            "maritime safety training",
+            "technical training institute"
         ]
         
         progress_bar = st.progress(0)
@@ -282,12 +312,15 @@ class CompanySearcher:
                             
                             # Filter for manufacturing-related businesses
                             if self._is_manufacturing_related(name, types):
+                                # Determine business size based on available data
+                                business_size = self._determine_business_size(name, types, place)
+                                
                                 company = {
                                     'name': name,
                                     'location': place.get('formattedAddress', 'Unknown'),
                                     'industry': ', '.join(types[:2]),
                                     'description': f"Business type: {', '.join(types[:2])}",
-                                    'size': 'Unknown',
+                                    'size': business_size,
                                     'capabilities': self._extract_capabilities_from_name_and_types(name, types),
                                     'lat': place_lat,
                                     'lon': place_lon,
@@ -323,7 +356,7 @@ class CompanySearcher:
             if exclude in name_lower:
                 return False
         
-        # Look for serious manufacturing companies
+        # Look for serious manufacturing companies OR training/workforce organizations
         manufacturing_keywords = [
             'manufacturing', 'fabrication', 'machining', 'industrial',
             'aerospace', 'defense', 'precision', 'cnc', 'automation', 
@@ -331,14 +364,27 @@ class CompanySearcher:
             'corporation', 'industries', 'solutions'
         ]
         
-        # Also look for business types that indicate larger operations
-        business_types = [
-            'manufacturer', 'contractor', 'engineering', 'technology',
-            'industrial', 'aerospace', 'defense'
+        # Naval-specific training and workforce keywords
+        training_keywords = [
+            'training', 'academy', 'institute', 'education', 'certification',
+            'apprenticeship', 'workforce', 'maritime', 'naval', 'shipyard',
+            'technical college', 'vocational', 'skills center'
         ]
         
-        # Check name and types
+        # Also look for business types that indicate larger operations OR training orgs
+        business_types = [
+            'manufacturer', 'contractor', 'engineering', 'technology',
+            'industrial', 'aerospace', 'defense', 'school', 'university',
+            'college', 'institute', 'academy', 'training_center'
+        ]
+        
+        # Check name and types for manufacturing
         for keyword in manufacturing_keywords:
+            if keyword in name_lower:
+                return True
+        
+        # Check name and types for training/workforce
+        for keyword in training_keywords:
             if keyword in name_lower:
                 return True
                 
@@ -351,6 +397,58 @@ class CompanySearcher:
             return True
         
         return False
+    
+    def _determine_business_size(self, name: str, types: List[str], place_data: Dict) -> str:
+        """Determine business size based on available indicators"""
+        name_lower = name.lower()
+        
+        # Large corporation indicators
+        large_corp_indicators = [
+            'honeywell', 'boeing', 'lockheed', 'raytheon', 'northrop', 'general dynamics',
+            'bae systems', 'textron', 'collins aerospace', 'pratt whitney', 'rolls royce',
+            'general electric', 'caterpillar', 'john deere', 'cummins', 'ford', 'gm'
+        ]
+        
+        # Medium business indicators
+        medium_indicators = [
+            'corporation', 'corp', 'industries', 'international', 'group',
+            'systems', 'technologies', 'holdings', 'enterprises'
+        ]
+        
+        # Small business indicators
+        small_indicators = [
+            'llc', 'inc', 'ltd', 'company', 'co', 'shop', 'works', 'services',
+            'solutions', 'custom', 'specialty', 'precision', 'family', 'brothers'
+        ]
+        
+        # Check for major corporations first
+        for indicator in large_corp_indicators:
+            if indicator in name_lower:
+                return 'Large Corporation'
+        
+        # Check number of reviews as size indicator
+        review_count = place_data.get('userRatingCount', 0)
+        if review_count > 100:
+            return 'Large Corporation'
+        elif review_count > 20:
+            return 'Medium Business'
+        
+        # Check business name patterns
+        for indicator in medium_indicators:
+            if indicator in name_lower:
+                return 'Medium Business'
+        
+        # Default to small business for most others
+        for indicator in small_indicators:
+            if indicator in name_lower:
+                return 'Small Business'
+        
+        # If it has very few reviews or no clear indicators, likely small
+        if review_count <= 10:
+            return 'Small Business'
+        
+        # Default case
+        return 'Medium Business'
     
     def _extract_capabilities_from_name_and_types(self, name: str, types: List[str]) -> List[str]:
         """Extract capabilities from name and types"""
@@ -367,14 +465,22 @@ class CompanySearcher:
             'robotics': 'Robotics Integration',
             'precision': 'Precision Manufacturing',
             'metal': 'Metal Working',
-            'assembly': 'Assembly Services'
+            'assembly': 'Assembly Services',
+            'training': 'Training Services',
+            'academy': 'Maritime Academy',
+            'certification': 'Certification Programs',
+            'maritime': 'Maritime Training',
+            'naval': 'Naval Training',
+            'shipyard': 'Shipyard Training',
+            'safety': 'Safety Training',
+            'apprenticeship': 'Apprenticeship Programs'
         }
         
         for keyword, capability in capability_mapping.items():
             if keyword in name_lower:
                 capabilities.append(capability)
         
-        return capabilities if capabilities else ['General Manufacturing']
+        return capabilities if capabilities else ['General Services']
     
     def generate_sample_companies(self) -> List[Dict]:
         """Generate sample companies for demonstration"""
@@ -522,8 +628,71 @@ def main():
         layout="wide"
     )
     
-    st.title("🔍 iScout Naval Supplier Search Tool")
-    st.markdown("### NAVSEA Shipbuilding and Maintenance Supplier Identification")
+    # Custom CSS to match WBI styling
+    st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+    }
+    .main-header h1 {
+        color: white;
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    .main-header p {
+        color: #e0e7ff;
+        font-size: 1.2rem;
+        margin-bottom: 0;
+    }
+    .info-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+    }
+    .metric-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    }
+    .stButton > button {
+        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 2rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(90deg, #1e40af 0%, #2563eb 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Header section matching WBI style
+    st.markdown("""
+    <div class="main-header">
+        <h1>🔍 iScout Naval Supplier Search</h1>
+        <p>Helping the Naval Community Make Smarter Supplier Decisions Through Advanced Analytics</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="info-card">
+        <h3>🎯 Mission Focus: NAVSEA Shipbuilding and Maintenance</h3>
+        <p>By uniting suppliers, manufacturers, and naval experts, we deliver cutting-edge supplier intelligence that empowers better procurement decisions. At iScout, we don't just find suppliers; we help you shape the future of naval acquisition through data-driven insights.</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Sidebar configuration
     st.sidebar.header("Search Configuration")
@@ -611,23 +780,33 @@ def main():
         )
         if unmanned_keywords_str:
             config.unmanned_keywords = [k.strip() for k in unmanned_keywords_str.split(",")]
+        
+        workforce_keywords_str = st.text_area(
+            "Workforce & Training Keywords",
+            value=", ".join(config.workforce_keywords)
+        )
+        if workforce_keywords_str:
+            config.workforce_keywords = [k.strip() for k in workforce_keywords_str.split(",")]
     
     # Main content area
     col1, col2 = st.columns([2, 1])
     
     with col2:
-        st.markdown("### Key Focus Areas")
         st.markdown("""
-        **Primary Challenges:**
-        - Chronic Maintenance Delays
-        - Workforce Crisis / Human Capital Deficit
-        
-        **Technology Solutions:**
-        - Advanced Manufacturing
-        - Robotics & Automation  
-        - Unmanned Systems
-        - Additive Manufacturing
-        """)
+        <div class="info-card">
+            <h3>⚡ The Innovation Pipeline for Naval Objectives</h3>
+            <p>The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
+            
+            <h4>🔍 Discover</h4>
+            <p>Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
+            
+            <h4>⚙️ Develop</h4>
+            <p>iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
+            
+            <h4>🚀 Deliver</h4>
+            <p>With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         if st.button("🔍 Search Companies", type="primary"):
             st.session_state.search_triggered = True
@@ -647,32 +826,42 @@ def main():
         
         st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of {config.base_location}")
         
-        # Summary metrics
+        # Summary metrics with enhanced styling
+        st.markdown("### 📊 Supplier Intelligence Dashboard")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Companies", len(companies))
+            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
+            st.metric("Total Suppliers", len(companies))
+            st.markdown('</div>', unsafe_allow_html=True)
         with col2:
+            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             high_relevance = len([c for c in companies if c['total_score'] >= 5])
             st.metric("High Relevance", high_relevance)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col3:
+            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             small_businesses = len([c for c in companies if c['size'] == 'Small Business'])
             st.metric("Small Businesses", small_businesses)
+            st.markdown('</div>', unsafe_allow_html=True)
         with col4:
+            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             avg_distance = sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
             st.metric("Avg Distance", f"{avg_distance:.1f} mi")
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        # Tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Company List", "🗺️ Map View", "📈 Analytics", "📋 Export"])
+        # Tabs for different views with enhanced styling
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Supplier Directory", "🗺️ Geographic Intelligence", "📈 Market Analytics", "📋 Intelligence Export"])
         
         with tab1:
-            st.subheader("Company Directory")
+            st.subheader("🏭 Naval Supplier Directory")
+            st.markdown("*Comprehensive supplier intelligence for naval procurement professionals*")
             
             # Filters
             col1, col2, col3 = st.columns(3)
             with col1:
                 min_score = st.slider("Minimum Relevance Score", 0, 10, 0)
             with col2:
-                size_filter = st.selectbox("Company Size", ["All", "Small Business", "Medium Business"])
+                size_filter = st.selectbox("Company Size", ["All", "Small Business", "Medium Business", "Large Corporation"])
             with col3:
                 max_distance = st.slider("Maximum Distance", 0, config.radius_miles, config.radius_miles)
             
@@ -685,35 +874,40 @@ def main():
             if max_distance < config.radius_miles:
                 filtered_companies = [c for c in filtered_companies if c['distance_miles'] <= max_distance]
             
-            # Display companies
+            # Display companies with enhanced styling
             for company in filtered_companies:
-                with st.expander(f"🏭 {company['name']} (Score: {company['total_score']})"):
+                with st.expander(f"🏭 {company['name']} (Naval Relevance Score: {company['total_score']})"):
+                    st.markdown(f"**🎯 Supplier Profile**")
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.write(f"**Location:** {company['location']}")
-                        st.write(f"**Industry:** {company['industry']}")
-                        st.write(f"**Size:** {company['size']}")
-                        st.write(f"**Distance:** {company['distance_miles']} miles")
+                        st.markdown(f"**📍 Location:** {company['location']}")
+                        st.markdown(f"**🏢 Industry:** {company['industry']}")
+                        st.markdown(f"**📏 Size:** {company['size']}")
+                        st.markdown(f"**📐 Distance:** {company['distance_miles']} miles")
                     with col2:
-                        st.write(f"**Website:** {company['website']}")
-                        st.write(f"**Phone:** {company['phone']}")
-                        st.write(f"**Capabilities:** {', '.join(company['capabilities'])}")
+                        st.markdown(f"**🌐 Website:** {company['website']}")
+                        st.markdown(f"**📞 Phone:** {company['phone']}")
+                        st.markdown(f"**⚙️ Capabilities:** {', '.join(company['capabilities'])}")
                     
-                    st.write(f"**Description:** {company['description']}")
+                    st.markdown(f"**📋 Description:** {company['description']}")
                     
-                    # Relevance breakdown
-                    col1, col2, col3, col4 = st.columns(4)
+                    # Relevance breakdown with enhanced styling
+                    st.markdown("**🎯 Naval Relevance Analysis**")
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
-                        st.metric("Total Score", company['total_score'])
+                        st.metric("🎯 Total Score", company['total_score'])
                     with col2:
-                        st.metric("Manufacturing", company['manufacturing_score'])
+                        st.metric("🏭 Manufacturing", company['manufacturing_score'])
                     with col3:
-                        st.metric("Robotics", company['robotics_score'])
+                        st.metric("🤖 Robotics", company['robotics_score'])
                     with col4:
-                        st.metric("Unmanned", company['unmanned_score'])
+                        st.metric("🚁 Unmanned", company['unmanned_score'])
+                    with col5:
+                        st.metric("👥 Workforce", company['workforce_score'])
         
         with tab2:
-            st.subheader("Geographic Distribution")
+            st.subheader("🗺️ Geographic Supplier Intelligence")
+            st.markdown("*Visual analysis of supplier distribution and proximity to naval facilities*")
             map_fig = create_company_map(companies, searcher.base_coords)
             if map_fig:
                 st.plotly_chart(map_fig, use_container_width=True)
@@ -721,7 +915,8 @@ def main():
                 st.info("No companies to display on map")
         
         with tab3:
-            st.subheader("Search Analytics")
+            st.subheader("📈 Naval Supplier Market Analytics")
+            st.markdown("*Strategic insights into supplier landscape and market composition*")
             
             if companies:
                 df = pd.DataFrame(companies)
@@ -752,7 +947,8 @@ def main():
                     st.plotly_chart(fig_bar, use_container_width=True)
         
         with tab4:
-            st.subheader("Export Results")
+            st.subheader("📋 Supplier Intelligence Export")
+            st.markdown("*Download comprehensive supplier data for procurement analysis*")
             
             if companies:
                 df = pd.DataFrame(companies)
