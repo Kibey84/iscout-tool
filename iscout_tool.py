@@ -634,10 +634,11 @@ def main():
     /* Import Inter font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
-    /* Main page styling with better background */
+    /* Main page styling with dark background */
     .stApp {
         font-family: 'Inter', sans-serif;
-        background-color: #ffffff; /* Clean white background */
+        background-color: #1a202c; /* Dark background */
+        color: #ffffff;
     }
     
     /* Hide default streamlit elements */
@@ -708,29 +709,29 @@ def main():
         margin-bottom: 2rem;
     }
     
-    /* Content cards with excellent contrast */
+    /* Content cards with dark theme */
     .wbi-card {
-        background: #ffffff;
+        background: #2d3748; /* Dark card background */
         border-radius: 1rem;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
         padding: 2rem;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #4a5568;
         margin: 1rem 0;
     }
     
     .wbi-card h3 {
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600 !important;
         margin-bottom: 1rem !important;
     }
     
     .wbi-card h4 {
-        color: #2d3748 !important;
+        color: #e2e8f0 !important;
         font-weight: 600 !important;
     }
     
     .wbi-card p {
-        color: #4a5568 !important;
+        color: #cbd5e0 !important;
         line-height: 1.6;
     }
     
@@ -769,11 +770,11 @@ def main():
         box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4) !important;
     }
     
-    /* Tab styling with better contrast */
+    /* Tab styling with dark theme */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
-        border-bottom: 2px solid #e2e8f0;
-        background-color: #f8fafc;
+        border-bottom: 2px solid #4a5568;
+        background-color: #2d3748;
         border-radius: 0.5rem 0.5rem 0 0;
     }
     
@@ -781,25 +782,25 @@ def main():
         background-color: transparent;
         border: none;
         padding: 1rem 1.5rem;
-        color: #4a5568 !important;
+        color: #cbd5e0 !important;
         font-weight: 500;
         border-bottom: 3px solid transparent;
         font-family: 'Inter', sans-serif;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        color: #2d3748 !important;
-        background-color: #edf2f7;
+        color: #ffffff !important;
+        background-color: #374151;
     }
     
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600;
         border-bottom: 3px solid #2563eb !important;
-        background-color: #ffffff;
+        background-color: #1a202c;
     }
     
-    /* Metrics styling with better contrast */
+    /* Metrics styling with dark theme */
     .metric-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -808,31 +809,31 @@ def main():
     }
     
     .metric-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        background: #2d3748; /* Dark metric cards */
         border-radius: 1rem;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         padding: 2rem;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #4a5568;
         text-align: center;
         transition: transform 0.2s ease;
     }
     
     .metric-card:hover {
         transform: translateY(-4px);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
     }
     
     .metric-value {
         font-size: 2.5rem;
         font-weight: 700;
-        color: #1a202c !important;
+        color: #ffffff !important;
         margin: 0;
         font-family: 'Inter', sans-serif;
     }
     
     .metric-label {
         font-size: 0.875rem;
-        color: #4a5568 !important;
+        color: #cbd5e0 !important;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -841,15 +842,15 @@ def main():
     
     /* Sidebar styling improvements */
     .stSidebar > div:first-child {
-        background-color: #f8fafc;
-        border-right: 2px solid #e2e8f0;
+        background-color: #2d3748; /* Dark sidebar */
+        border-right: 2px solid #4a5568;
     }
     
     .stSidebar .stSelectbox label,
     .stSidebar .stSlider label,
     .stSidebar .stTextInput label,
     .stSidebar .stTextArea label {
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600 !important;
     }
     
@@ -872,37 +873,38 @@ def main():
     .main .block-container h1,
     .main .block-container h2,
     .main .block-container h3 {
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600 !important;
     }
     
     .main .block-container p,
     .main .block-container li,
     .main .block-container span {
-        color: #374151 !important;
+        color: #e2e8f0 !important;
     }
     
     /* FIXED: Expander styling */
     .streamlit-expanderHeader {
-        background-color: #f8fafc !important;
-        border: 1px solid #e2e8f0 !important;
+        background-color: #2d3748 !important;
+        border: 1px solid #4a5568 !important;
         border-radius: 0.5rem !important;
-        color: #1a202c !important;
+        color: #ffffff !important;
         font-weight: 600 !important;
     }
     
     .streamlit-expanderContent {
-        background-color: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
+        background-color: #1a202c !important;
+        border: 1px solid #4a5568 !important;
         border-top: none !important;
-        color: #374151 !important;
+        color: #e2e8f0 !important;
     }
     
     /* FIXED: DataFrame and table styling */
     .stDataFrame {
-        border: 1px solid #e2e8f0;
+        border: 1px solid #4a5568;
         border-radius: 0.5rem;
         overflow: hidden;
+        background-color: #2d3748;
     }
     
     /* Remove any background code display issues */
