@@ -55,7 +55,7 @@ class SearchConfig:
 class CompanySearcher:
     def __init__(self, config: SearchConfig):
         self.config = config
-        self.geolocator = Nominatim(user_agent="iscout_naval_search")
+        self.geolocator = Nominatim(user_agent="wbi_naval_search")
         self.base_coords = self._get_coordinates(config.base_location)
         
     def _get_coordinates(self, location: str) -> tuple:
@@ -623,21 +623,21 @@ def create_company_map(companies: List[Dict], base_coords: tuple):
 
 def main():
     st.set_page_config(
-        page_title="iScout Naval Supplier Search",
+        page_title="WBI Naval Search - Supplier Intelligence Platform",
         page_icon="⚓",
         layout="wide"
     )
     
-    # Exact WBI styling from the HTML
+    # Fixed WBI styling with better contrast and no code display issues
     st.markdown("""
     <style>
-    /* Import Inter font like WBI */
+    /* Import Inter font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
-    /* Main page styling */
+    /* Main page styling with better background */
     .stApp {
         font-family: 'Inter', sans-serif;
-        background-color: #f3f4f6; /* bg-gray-100 */
+        background-color: #ffffff; /* Clean white background */
     }
     
     /* Hide default streamlit elements */
@@ -645,162 +645,295 @@ def main():
     header[data-testid="stHeader"] {display: none;}
     .stMainBlockContainer {padding-top: 1rem;}
     
-    /* WBI Header styling - exactly like the HTML */
+    /* WBI Header styling with high contrast */
     .wbi-header {
-        background-color: #000000;
-        padding: 1.5rem 1rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+        padding: 2rem 1rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
         margin-bottom: 0;
+        position: relative;
     }
     
     .wbi-logo-container {
-        background-color: white;
-        border-radius: 0.5rem;
-        padding: 0.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: linear-gradient(135deg, #ffffff 0%, #f7fafc 100%);
+        border-radius: 1rem;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         display: flex;
         justify-content: center;
         align-items: center;
         width: fit-content;
         margin-left: auto;
         margin-right: auto;
+        border: 2px solid #e2e8f0;
     }
     
     .wbi-logo {
-        height: 8rem; /* h-32 */
-        font-size: 4rem;
-        color: #1f2937;
-        font-weight: bold;
+        height: 6rem;
+        font-size: 3.5rem;
+        color: #1a202c;
+        font-weight: 800;
         display: flex;
         align-items: center;
         gap: 1rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
     
     .wbi-header h1 {
-        color: white !important;
-        font-size: 1.875rem !important; /* text-3xl */
+        color: #ffffff !important;
+        font-size: 2.25rem !important;
         font-weight: 700 !important;
         text-align: center;
         margin: 0 !important;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     }
     
     .wbi-header p {
-        color: #d1d5db !important; /* text-gray-300 */
+        color: #cbd5e0 !important;
         text-align: center;
-        margin-top: 0.5rem !important;
+        margin-top: 0.75rem !important;
         margin-bottom: 0 !important;
-        max-width: 32rem;
+        max-width: 36rem;
         margin-left: auto !important;
         margin-right: auto !important;
+        font-size: 1.1rem;
+        line-height: 1.6;
     }
     
-    /* Black border like WBI */
+    /* Professional border */
     .wbi-border {
-        border-top: 2px solid #000000;
+        border-top: 4px solid #2563eb;
+        background: linear-gradient(90deg, #2563eb 0%, #3b82f6 50%, #2563eb 100%);
         margin-bottom: 2rem;
     }
     
-    /* Content cards like WBI */
+    /* Content cards with excellent contrast */
     .wbi-card {
-        background: white;
-        border-radius: 0.75rem; /* rounded-xl */
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        padding: 1.5rem;
-        border: 1px solid #e5e7eb;
+        background: #ffffff;
+        border-radius: 1rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+        padding: 2rem;
+        border: 1px solid #e2e8f0;
         margin: 1rem 0;
     }
     
-    /* Button styling like WBI */
+    .wbi-card h3 {
+        color: #1a202c !important;
+        font-weight: 600 !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .wbi-card h4 {
+        color: #2d3748 !important;
+        font-weight: 600 !important;
+    }
+    
+    .wbi-card p {
+        color: #4a5568 !important;
+        line-height: 1.6;
+    }
+    
+    /* FIXED: Progress bar with proper contrast */
+    .stProgress > div > div > div > div {
+        background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%) !important;
+        height: 8px !important;
+        border-radius: 4px !important;
+    }
+    
+    .stProgress > div > div > div {
+        background-color: #e5e7eb !important;
+        border-radius: 4px !important;
+    }
+    
+    /* Button styling with high contrast */
     .stButton > button {
-        background: #000000 !important;
-        color: white !important;
+        background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%) !important;
+        color: #ffffff !important;
         border: none !important;
-        border-radius: 0.5rem !important;
-        padding: 0.75rem 1rem !important;
-        font-weight: 500 !important;
+        border-radius: 0.75rem !important;
+        padding: 0.875rem 1.5rem !important;
+        font-weight: 600 !important;
         font-size: 1rem !important;
-        transition: all 0.2s ease !important;
+        transition: all 0.3s ease !important;
         width: 100% !important;
         font-family: 'Inter', sans-serif !important;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
     
     .stButton > button:hover {
-        background: #374151 !important;
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4) !important;
     }
     
-    /* Tab styling like WBI */
+    /* Tab styling with better contrast */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 2px solid #e2e8f0;
+        background-color: #f8fafc;
+        border-radius: 0.5rem 0.5rem 0 0;
     }
     
     .stTabs [data-baseweb="tab"] {
         background-color: transparent;
         border: none;
-        padding: 0.75rem 1.5rem;
-        color: #6b7280;
+        padding: 1rem 1.5rem;
+        color: #4a5568 !important;
         font-weight: 500;
         border-bottom: 3px solid transparent;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #2d3748 !important;
+        background-color: #edf2f7;
     }
     
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #111827;
+        color: #1a202c !important;
         font-weight: 600;
-        border-bottom: 3px solid #f59e0b; /* WBI yellow accent */
+        border-bottom: 3px solid #2563eb !important;
+        background-color: #ffffff;
     }
     
-    /* Metrics styling */
+    /* Metrics styling with better contrast */
     .metric-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 1.5rem;
         margin: 2rem 0;
     }
     
     .metric-card {
-        background: white;
-        border-radius: 0.75rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        padding: 1.5rem;
-        border: 1px solid #e5e7eb;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border-radius: 1rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        padding: 2rem;
+        border: 1px solid #e2e8f0;
         text-align: center;
+        transition: transform 0.2s ease;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
     }
     
     .metric-value {
-        font-size: 2rem;
+        font-size: 2.5rem;
         font-weight: 700;
-        color: #111827;
+        color: #1a202c !important;
         margin: 0;
+        font-family: 'Inter', sans-serif;
     }
     
     .metric-label {
         font-size: 0.875rem;
-        color: #6b7280;
-        font-weight: 500;
+        color: #4a5568 !important;
+        font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin: 0.5rem 0 0 0;
+        margin: 0.75rem 0 0 0;
+    }
+    
+    /* Sidebar styling improvements */
+    .stSidebar > div:first-child {
+        background-color: #f8fafc;
+        border-right: 2px solid #e2e8f0;
+    }
+    
+    .stSidebar .stSelectbox label,
+    .stSidebar .stSlider label,
+    .stSidebar .stTextInput label,
+    .stSidebar .stTextArea label {
+        color: #1a202c !important;
+        font-weight: 600 !important;
+    }
+    
+    /* FIXED: Info and success messages with better contrast */
+    .stInfo {
+        background-color: #dbeafe !important;
+        border: 1px solid #93c5fd !important;
+        border-radius: 0.5rem !important;
+        color: #1e40af !important;
+    }
+    
+    .stSuccess {
+        background-color: #dcfce7 !important;
+        border: 1px solid #86efac !important;
+        border-radius: 0.5rem !important;
+        color: #166534 !important;
+    }
+    
+    /* FIXED: Text contrast in main content */
+    .main .block-container h1,
+    .main .block-container h2,
+    .main .block-container h3 {
+        color: #1a202c !important;
+        font-weight: 600 !important;
+    }
+    
+    .main .block-container p,
+    .main .block-container li,
+    .main .block-container span {
+        color: #374151 !important;
+    }
+    
+    /* FIXED: Expander styling */
+    .streamlit-expanderHeader {
+        background-color: #f8fafc !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 0.5rem !important;
+        color: #1a202c !important;
+        font-weight: 600 !important;
+    }
+    
+    .streamlit-expanderContent {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-top: none !important;
+        color: #374151 !important;
+    }
+    
+    /* FIXED: DataFrame and table styling */
+    .stDataFrame {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        overflow: hidden;
+    }
+    
+    /* Remove any background code display issues */
+    .stMarkdown pre,
+    .stCode {
+        display: none !important;
+    }
+    
+    /* Ensure all text has sufficient contrast */
+    * {
+        color: inherit;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # WBI-style header with logo box
+    # WBI-style header with clean branding
     st.markdown("""
     <div class="wbi-header">
         <div class="wbi-logo-container">
             <div class="wbi-logo">
-                ⚓ iScout
+                ⚓ WBI
             </div>
         </div>
-        <h1>Naval Supplier Search</h1>
-        <p>An integrated suite of tools for opportunity discovery, supplier identification, and naval procurement intelligence.</p>
+        <h1>Naval Search</h1>
+        <p>Advanced supplier intelligence and procurement analytics platform for naval operations. Discover, analyze, and connect with defense contractors and maritime suppliers.</p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
     
     # Sidebar configuration
-    st.sidebar.header("Search Configuration")
+    st.sidebar.header("🔧 Search Configuration")
     
     # API Key input if not found
     if not GOOGLE_PLACES_API_KEY:
@@ -864,7 +997,7 @@ def main():
     config.target_company_count = st.sidebar.slider("Target Company Count", 10, 200, 100)
     
     # Keyword customization
-    with st.sidebar.expander("Customize Keywords"):
+    with st.sidebar.expander("🎯 Customize Keywords"):
         manufacturing_keywords_str = st.text_area(
             "Manufacturing Keywords",
             value=", ".join(config.manufacturing_keywords)
@@ -899,22 +1032,22 @@ def main():
     with col2:
         st.markdown("""
         <div class="wbi-card">
-            <h3 style="color: #111827; margin-top: 0; margin-bottom: 1rem; font-weight: 600;">⚡ The Innovation Pipeline for Naval Objectives</h3>
-            <p style="color: #6b7280; margin-bottom: 1.5rem;">The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
+            <h3>⚡ Naval Procurement Intelligence</h3>
+            <p>Advanced supplier discovery and market intelligence for naval operations. Streamline procurement with data-driven supplier identification.</p>
             
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">🔍 Discover</h4>
-                <p style="color: #6b7280; margin-bottom: 1rem;">Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
+            <div style="margin: 1.5rem 0;">
+                <h4>🔍 Discover</h4>
+                <p>Explore suppliers and market trends to make informed procurement decisions with reduced friction and enhanced efficiency.</p>
             </div>
             
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">⚙️ Develop</h4>
-                <p style="color: #6b7280; margin-bottom: 1rem;">iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
+            <div style="margin: 1.5rem 0;">
+                <h4>⚙️ Analyze</h4>
+                <p>WBI Naval Search expedites supplier identification through advanced analytics and naval-specific relevance scoring.</p>
             </div>
             
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">🚀 Deliver</h4>
-                <p style="color: #6b7280; margin-bottom: 0;">With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
+            <div style="margin: 1.5rem 0;">
+                <h4>🚀 Execute</h4>
+                <p>Position supplier intelligence to execute naval procurement with confidence, efficiency, and strategic readiness.</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -939,7 +1072,7 @@ def main():
         
         # WBI-style metrics dashboard
         st.markdown("""
-        <h2 style="color: #111827; font-weight: 700; font-size: 1.5rem; margin-bottom: 1.5rem;">📊 Supplier Intelligence Dashboard</h2>
+        <h2 style="color: #1a202c; font-weight: 700; font-size: 1.75rem; margin-bottom: 1.5rem;">📊 Supplier Intelligence Dashboard</h2>
         <div class="metric-grid">
             <div class="metric-card">
                 <p class="metric-value">{}</p>
@@ -1074,19 +1207,20 @@ def main():
                 st.download_button(
                     label="📥 Download CSV",
                     data=csv,
-                    file_name=f"iscout_naval_suppliers_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                    file_name=f"wbi_naval_suppliers_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
                 )
                 
                 # Summary report
-                st.subheader("Summary Report")
+                st.subheader("📄 Executive Summary Report")
                 st.markdown(f"""
-                **iScout Naval Supplier Search Results**
+                **WBI Naval Search - Supplier Intelligence Report**
                 
                 - **Search Area:** {config.radius_miles} miles from {config.base_location}
                 - **Companies Found:** {len(companies)}
                 - **Small Businesses:** {len([c for c in companies if c['size'] == 'Small Business'])}
                 - **High Relevance (Score ≥ 5):** {len([c for c in companies if c['total_score'] >= 5])}
+                - **Average Distance:** {sum(c['distance_miles'] for c in companies) / len(companies):.1f} miles
                 
                 **Top 5 Companies by Relevance:**
                 """)
