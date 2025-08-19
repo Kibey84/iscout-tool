@@ -117,7 +117,6 @@ class CompanySearcher:
     def search_google_places(self, query: str, radius_meters: int = 50000) -> List[Dict]:
         """Search Google Places API for real companies"""
         if not GOOGLE_PLACES_API_KEY:
-            st.warning("⚠️ Google Places API key not configured. Using demo data.")
             return []
         
         companies = []
@@ -135,32 +134,51 @@ class CompanySearcher:
         }
         
         try:
-            response = requests.get(url, params=params)
+            st.write(f"🔍 Searching for '{query}' near {lat}, {lon} within {radius_meters/1609:.1f} miles...")
+            response = requests.get(url, params=params, timeout=10)
+            
+            st.write(f"API Response Status: {response.status_code}")
+            
+            if response.status_code != 200:
+                st.error(f"API request failed with status {response.status_code}: {response.text}")
+                return []
+            
             data = response.json()
+            st.write(f"API Response Status: {data.get('status', 'Unknown')}")
             
             if data['status'] == 'OK':
+                st.write(f"Found {len(data['results'])} results for '{query}'")
                 for place in data['results']:
-                    # Get detailed place information
-                    place_details = self._get_place_details(place['place_id'])
-                    
                     company = {
                         'name': place.get('name', 'Unknown'),
                         'location': place.get('vicinity', 'Unknown'),
                         'industry': ', '.join(place.get('types', [])),
-                        'description': place_details.get('description', f"Business in {', '.join(place.get('types', []))}"),
+                        'description': f"Business in {', '.join(place.get('types', []))}",
                         'size': 'Unknown',
                         'capabilities': self._extract_capabilities(place),
                         'lat': place['geometry']['location']['lat'],
                         'lon': place['geometry']['location']['lng'],
-                        'website': place_details.get('website', 'Not available'),
-                        'phone': place_details.get('phone', 'Not available'),
+                        'website': 'Not available',
+                        'phone': 'Not available',
                         'rating': place.get('rating', 0),
                         'user_ratings_total': place.get('user_ratings_total', 0)
                     }
                     companies.append(company)
+            elif data['status'] == 'ZERO_RESULTS':
+                st.warning(f"No results found for '{query}' in this area")
+            elif data['status'] == 'REQUEST_DENIED':
+                st.error(f"API request denied. Check your API key and billing settings. Error: {data.get('error_message', 'Unknown error')}")
+            elif data['status'] == 'INVALID_REQUEST':
+                st.error(f"Invalid request. Check parameters. Error: {data.get('error_message', 'Unknown error')}")
+            else:
+                st.error(f"API Error: {data.get('status')} - {data.get('error_message', 'Unknown error')}")
             
+        except requests.exceptions.Timeout:
+            st.error(f"Request timeout while searching for '{query}'")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Network error while searching for '{query}': {str(e)}")
         except Exception as e:
-            st.error(f"Error searching Google Places: {e}")
+            st.error(f"Unexpected error searching for '{query}': {str(e)}")
         
         return companies
     
@@ -216,32 +234,31 @@ class CompanySearcher:
         """Search for real companies using multiple queries"""
         all_companies = []
         
+        if not GOOGLE_PLACES_API_KEY:
+            st.error("🔑 Google Places API key is required for real search")
+            return []
+        
+        st.info(f"🔍 Searching for real companies near {self.config.base_location}")
+        
         # Define search queries for different types of companies
         search_queries = [
             "manufacturing",
-            "metal fabrication",
-            "CNC machining",
-            "welding services", 
-            "automation",
-            "robotics",
-            "3D printing",
-            "precision machining",
-            "industrial equipment"
+            "metal fabrication", 
+            "machining",
+            "welding"
         ]
         
-        radius_meters = self.config.radius_miles * 1609  # Convert miles to meters
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        radius_meters = min(self.config.radius_miles * 1609, 50000)  # Google limit is 50km
+        st.write(f"Search radius: {radius_meters/1609:.1f} miles ({radius_meters} meters)")
         
         for i, query in enumerate(search_queries):
-            status_text.text(f"Searching for {query} companies...")
-            companies = self.search_google_places(query, radius_meters)
-            all_companies.extend(companies)
-            progress_bar.progress((i + 1) / len(search_queries))
-            time.sleep(0.5)  # Rate limiting
+            with st.expander(f"Searching: {query}", expanded=True):
+                companies = self.search_google_places(query, radius_meters)
+                all_companies.extend(companies)
+                st.write(f"Added {len(companies)} companies from '{query}' search")
+                time.sleep(1)  # Rate limiting
         
-        status_text.text("Processing results...")
+        st.write(f"Total companies found before filtering: {len(all_companies)}")
         
         # Remove duplicates based on name and location
         unique_companies = []
@@ -265,13 +282,15 @@ class CompanySearcher:
                     company['within_radius'] = True
                     unique_companies.append(company)
         
+        st.write(f"Unique companies within radius: {len(unique_companies)}")
+        
         # Sort by relevance score
         unique_companies.sort(key=lambda x: x['total_score'], reverse=True)
         
-        progress_bar.empty()
-        status_text.empty()
+        final_companies = unique_companies[:self.config.target_company_count]
+        st.success(f"✅ Returning {len(final_companies)} companies")
         
-        return unique_companies[:self.config.target_company_count]
+        return final_companies
     
     def generate_sample_companies(self) -> List[Dict]:
         """Generate sample companies for demonstration"""
