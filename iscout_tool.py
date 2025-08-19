@@ -82,38 +82,77 @@ class CompanySearcher:
             'total_score': 0
         }
         
-        # Higher value keywords for serious naval suppliers
-        high_value_keywords = {
-            'defense': 5, 'naval': 5, 'aerospace': 4, 'military': 4,
-            'contractor': 3, 'corporation': 2, 'industries': 2,
-            'technologies': 2, 'systems': 2, 'solutions': 2
+        # High-value company name keywords (since descriptions are limited)
+        high_value_name_keywords = {
+            'aerospace': 8, 'defense': 8, 'naval': 8, 'military': 7,
+            'honeywell': 6, 'boeing': 6, 'lockheed': 6, 'raytheon': 6,
+            'systems': 5, 'technologies': 5, 'corporation': 4, 'industries': 4,
+            'engineering': 4, 'solutions': 3, 'manufacturing': 3,
+            'precision': 4, 'automation': 4, 'robotics': 5
         }
         
-        # Score manufacturing relevance
-        for keyword in self.config.manufacturing_keywords:
-            if keyword.lower() in combined_text:
-                scores['manufacturing_score'] += 1
+        # Manufacturing-related keywords
+        manufacturing_keywords = {
+            'manufacturing': 3, 'fabrication': 3, 'machining': 3, 'metal': 2,
+            'cnc': 3, 'welding': 2, 'assembly': 2, 'production': 2,
+            'machine': 2, 'tool': 2, 'sheet metal': 3
+        }
         
-        # Score robotics relevance  
-        for keyword in self.config.robotics_keywords:
-            if keyword.lower() in combined_text:
-                scores['robotics_score'] += 2
+        # Robotics and automation
+        robotics_keywords = {
+            'robotics': 4, 'automation': 4, 'robotic': 4, 'automated': 3,
+            'fanuc': 4, 'kuka': 4, 'abb': 3, 'controls': 2
+        }
         
-        # Score unmanned systems relevance
-        for keyword in self.config.unmanned_keywords:
-            if keyword.lower() in combined_text:
-                scores['unmanned_score'] += 3
+        # Unmanned systems
+        unmanned_keywords = {
+            'unmanned': 5, 'autonomous': 5, 'uav': 5, 'drone': 4,
+            'uuv': 5, 'usv': 5, 'remote': 2, 'guidance': 3
+        }
         
-        # Bonus points for high-value keywords
-        for keyword, bonus in high_value_keywords.items():
+        # Score based on company name and type (most reliable data we have)
+        for keyword, points in high_value_name_keywords.items():
+            if keyword in name:
+                scores['manufacturing_score'] += points
+        
+        for keyword, points in manufacturing_keywords.items():
             if keyword in combined_text:
+                scores['manufacturing_score'] += points
+        
+        for keyword, points in robotics_keywords.items():
+            if keyword in combined_text:
+                scores['robotics_score'] += points
+        
+        for keyword, points in unmanned_keywords.items():
+            if keyword in combined_text:
+                scores['unmanned_score'] += points
+        
+        # Bonus for known defense contractors and aerospace companies
+        major_contractors = [
+            'honeywell', 'boeing', 'lockheed', 'raytheon', 'northrop', 'general dynamics',
+            'bae systems', 'huntington ingalls', 'newport news', 'bath iron',
+            'electric boat', 'textron', 'l3harris', 'collins aerospace'
+        ]
+        
+        for contractor in major_contractors:
+            if contractor in name:
+                scores['manufacturing_score'] += 10  # Major bonus
+        
+        # Industry type bonuses (Google Places business types)
+        industry_bonuses = {
+            'manufacturer': 3, 'contractor': 2, 'engineering': 2,
+            'consultant': 1, 'store': -1  # Stores are less relevant
+        }
+        
+        for industry_type, bonus in industry_bonuses.items():
+            if industry_type in industry:
                 scores['manufacturing_score'] += bonus
         
-        # Penalty for small operations
-        small_operation_keywords = ['mobile', 'roadside', 'auto', 'truck', 'trailer']
-        for keyword in small_operation_keywords:
-            if keyword in combined_text:
-                scores['manufacturing_score'] = max(0, scores['manufacturing_score'] - 3)
+        # Penalty for clearly non-manufacturing businesses
+        exclude_types = ['store', 'restaurant', 'gas_station', 'car_dealer', 'bank']
+        for exclude_type in exclude_types:
+            if exclude_type in industry:
+                scores['manufacturing_score'] = max(0, scores['manufacturing_score'] - 5)
         
         scores['total_score'] = (scores['manufacturing_score'] + 
                                scores['robotics_score'] + 
@@ -147,15 +186,17 @@ class CompanySearcher:
         
         # More targeted search queries for naval suppliers
         search_queries = [
-            "defense contractors manufacturing",
-            "aerospace manufacturing companies", 
-            "naval shipbuilding suppliers",
-            "military manufacturing",
-            "precision machining defense",
-            "industrial automation companies",
-            "metal fabrication defense contractors",
-            "robotics manufacturing companies",
-            "additive manufacturing 3D printing"
+            "Honeywell Aerospace",
+            "Boeing manufacturing", 
+            "Lockheed Martin",
+            "Raytheon Technologies",
+            "defense contractors",
+            "aerospace manufacturing",
+            "precision machining companies",
+            "industrial automation",
+            "CNC machining services",
+            "metal fabrication companies",
+            "engineering services companies"
         ]
         
         progress_bar = st.progress(0)
@@ -186,8 +227,8 @@ class CompanySearcher:
                 scores = self._score_company_relevance(company)
                 company.update(scores)
                 
-                # Filter by distance and minimum relevance
-                if distance <= self.config.radius_miles and company['total_score'] >= 1:
+                # Filter by distance and minimum relevance (lowered threshold)
+                if distance <= self.config.radius_miles and company['total_score'] >= 0:
                     unique_companies.append(company)
         
         # Sort by relevance score
