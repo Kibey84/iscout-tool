@@ -628,69 +628,127 @@ def main():
         layout="wide"
     )
     
-    # Custom CSS to match WBI styling
+    # WBI-inspired styling that actually works
     st.markdown("""
     <style>
+    /* Main page styling */
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    
+    /* Header styling */
     .main-header {
-        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
         padding: 2rem;
-        border-radius: 10px;
+        border-radius: 12px;
         margin-bottom: 2rem;
-    }
-    .main-header h1 {
         color: white;
+        text-align: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .main-header h1 {
+        color: white !important;
         font-size: 2.5rem;
-        font-weight: bold;
+        font-weight: 700;
         margin-bottom: 0.5rem;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+    
     .main-header p {
-        color: #e0e7ff;
-        font-size: 1.2rem;
-        margin-bottom: 0;
+        color: #e0e7ff !important;
+        font-size: 1.1rem;
+        margin: 0;
+        font-weight: 400;
     }
-    .info-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+    
+    /* Card styling */
+    .wbi-card {
+        background: white;
         border-radius: 8px;
         padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #3b82f6;
     }
-    .metric-container {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 1rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    }
+    
+    /* Button styling */
     .stButton > button {
-        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.75rem 2rem;
-        font-weight: bold;
-        transition: all 0.3s ease;
+        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.75rem 2rem !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+        transition: all 0.2s ease !important;
+        width: 100% !important;
     }
+    
     .stButton > button:hover {
-        background: linear-gradient(90deg, #1e40af 0%, #2563eb 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #1f2937;
+    }
+    
+    /* Logo styling */
+    .logo-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+    
+    .logo-text {
+        font-size: 2rem;
+        font-weight: bold;
+        color: white;
+        margin-left: 0.5rem;
+    }
+    
+    /* Metric cards */
+    .metric-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: 1px solid #e5e7eb;
+        margin: 0.5rem 0;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #1e40af;
+        margin: 0;
+    }
+    
+    .metric-label {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin: 0;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.05em;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Header section matching WBI style
+    # Header with logo and branding
     st.markdown("""
     <div class="main-header">
-        <h1>🔍 iScout Naval Supplier Search</h1>
-        <p>Helping the Naval Community Make Smarter Supplier Decisions Through Advanced Analytics</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div class="info-card">
-        <h3>🎯 Mission Focus: NAVSEA Shipbuilding and Maintenance</h3>
-        <p>By uniting suppliers, manufacturers, and naval experts, we deliver cutting-edge supplier intelligence that empowers better procurement decisions. At iScout, we don't just find suppliers; we help you shape the future of naval acquisition through data-driven insights.</p>
+        <div class="logo-container">
+            <div style="font-size: 3rem;">⚓</div>
+            <div class="logo-text">iScout</div>
+        </div>
+        <h1>Naval Supplier Search</h1>
+        <p>Shaping the Future of Naval Procurement Through Advanced Supplier Intelligence</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -793,18 +851,24 @@ def main():
     
     with col2:
         st.markdown("""
-        <div class="info-card">
-            <h3>⚡ The Innovation Pipeline for Naval Objectives</h3>
-            <p>The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
+        <div class="wbi-card">
+            <h3 style="color: #1e40af; margin-top: 0;">⚡ The Innovation Pipeline for Naval Objectives</h3>
+            <p style="color: #4b5563; margin-bottom: 1.5rem;">The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
             
-            <h4>🔍 Discover</h4>
-            <p>Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">🔍 Discover</h4>
+                <p style="color: #6b7280; margin-bottom: 1rem;">Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
+            </div>
             
-            <h4>⚙️ Develop</h4>
-            <p>iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">⚙️ Develop</h4>
+                <p style="color: #6b7280; margin-bottom: 1rem;">iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
+            </div>
             
-            <h4>🚀 Deliver</h4>
-            <p>With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">🚀 Deliver</h4>
+                <p style="color: #6b7280; margin-bottom: 0;">With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -826,35 +890,58 @@ def main():
         
         st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of {config.base_location}")
         
-        # Summary metrics with enhanced styling
-        st.markdown("### 📊 Supplier Intelligence Dashboard")
+        # Summary metrics with proper styling
+        st.markdown("""
+        <div style="margin: 2rem 0;">
+            <h3 style="color: #1e40af; text-align: center; margin-bottom: 1.5rem;">
+                📊 Supplier Intelligence Dashboard
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
-            st.metric("Total Suppliers", len(companies))
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card">
+                <p class="metric-value">{len(companies)}</p>
+                <p class="metric-label">Total Suppliers</p>
+            </div>
+            """, unsafe_allow_html=True)
         with col2:
-            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             high_relevance = len([c for c in companies if c['total_score'] >= 5])
-            st.metric("High Relevance", high_relevance)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card">
+                <p class="metric-value">{high_relevance}</p>
+                <p class="metric-label">High Relevance</p>
+            </div>
+            """, unsafe_allow_html=True)
         with col3:
-            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             small_businesses = len([c for c in companies if c['size'] == 'Small Business'])
-            st.metric("Small Businesses", small_businesses)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card">
+                <p class="metric-value">{small_businesses}</p>
+                <p class="metric-label">Small Businesses</p>
+            </div>
+            """, unsafe_allow_html=True)
         with col4:
-            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             avg_distance = sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
-            st.metric("Avg Distance", f"{avg_distance:.1f} mi")
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card">
+                <p class="metric-value">{avg_distance:.1f} mi</p>
+                <p class="metric-label">Avg Distance</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Tabs for different views with enhanced styling
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Supplier Directory", "🗺️ Geographic Intelligence", "📈 Market Analytics", "📋 Intelligence Export"])
         
         with tab1:
-            st.subheader("🏭 Naval Supplier Directory")
-            st.markdown("*Comprehensive supplier intelligence for naval procurement professionals*")
+            st.markdown("""
+            <div style="margin-bottom: 2rem;">
+                <h3 style="color: #1e40af;">🏭 Naval Supplier Directory</h3>
+                <p style="color: #6b7280; font-style: italic;">Comprehensive supplier intelligence for naval procurement professionals</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             # Filters
             col1, col2, col3 = st.columns(3)
@@ -906,8 +993,12 @@ def main():
                         st.metric("👥 Workforce", company['workforce_score'])
         
         with tab2:
-            st.subheader("🗺️ Geographic Supplier Intelligence")
-            st.markdown("*Visual analysis of supplier distribution and proximity to naval facilities*")
+            st.markdown("""
+            <div style="margin-bottom: 2rem;">
+                <h3 style="color: #1e40af;">🗺️ Geographic Supplier Intelligence</h3>
+                <p style="color: #6b7280; font-style: italic;">Visual analysis of supplier distribution and proximity to naval facilities</p>
+            </div>
+            """, unsafe_allow_html=True)
             map_fig = create_company_map(companies, searcher.base_coords)
             if map_fig:
                 st.plotly_chart(map_fig, use_container_width=True)
@@ -915,8 +1006,12 @@ def main():
                 st.info("No companies to display on map")
         
         with tab3:
-            st.subheader("📈 Naval Supplier Market Analytics")
-            st.markdown("*Strategic insights into supplier landscape and market composition*")
+            st.markdown("""
+            <div style="margin-bottom: 2rem;">
+                <h3 style="color: #1e40af;">📈 Naval Supplier Market Analytics</h3>
+                <p style="color: #6b7280; font-style: italic;">Strategic insights into supplier landscape and market composition</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             if companies:
                 df = pd.DataFrame(companies)
@@ -947,8 +1042,12 @@ def main():
                     st.plotly_chart(fig_bar, use_container_width=True)
         
         with tab4:
-            st.subheader("📋 Supplier Intelligence Export")
-            st.markdown("*Download comprehensive supplier data for procurement analysis*")
+            st.markdown("""
+            <div style="margin-bottom: 2rem;">
+                <h3 style="color: #1e40af;">📋 Supplier Intelligence Export</h3>
+                <p style="color: #6b7280; font-style: italic;">Download comprehensive supplier data for procurement analysis</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             if companies:
                 df = pd.DataFrame(companies)
