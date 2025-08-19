@@ -628,23 +628,22 @@ def main():
         layout="wide"
     )
     
-    # WBI-inspired styling that actually works
+    # WBI-inspired black and white styling
     st.markdown("""
     <style>
     /* Main page styling */
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #ffffff;
     }
     
-    /* Header styling */
+    /* Header styling - black and white like WBI */
     .main-header {
-        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
+        background: linear-gradient(135deg, #000000 0%, #333333 100%);
         padding: 2rem;
-        border-radius: 12px;
+        border-radius: 8px;
         margin-bottom: 2rem;
         color: white;
         text-align: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     
     .main-header h1 {
@@ -652,32 +651,21 @@ def main():
         font-size: 2.5rem;
         font-weight: 700;
         margin-bottom: 0.5rem;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .main-header p {
-        color: #e0e7ff !important;
+        color: #cccccc !important;
         font-size: 1.1rem;
         margin: 0;
         font-weight: 400;
     }
     
-    /* Card styling */
-    .wbi-card {
-        background: white;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #3b82f6;
-    }
-    
-    /* Button styling */
+    /* Button styling - black/gray theme */
     .stButton > button {
-        background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%) !important;
+        background: linear-gradient(135deg, #000000 0%, #333333 100%) !important;
         color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
+        border: 1px solid #333333 !important;
+        border-radius: 6px !important;
         padding: 0.75rem 2rem !important;
         font-weight: 600 !important;
         font-size: 1rem !important;
@@ -686,14 +674,8 @@ def main():
     }
     
     .stButton > button:hover {
-        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background-color: #1f2937;
+        background: linear-gradient(135deg, #333333 0%, #555555 100%) !important;
+        border-color: #555555 !important;
     }
     
     /* Logo styling */
@@ -710,37 +692,10 @@ def main():
         color: white;
         margin-left: 0.5rem;
     }
-    
-    /* Metric cards */
-    .metric-card {
-        background: white;
-        border-radius: 8px;
-        padding: 1.5rem;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border: 1px solid #e5e7eb;
-        margin: 0.5rem 0;
-    }
-    
-    .metric-value {
-        font-size: 2rem;
-        font-weight: bold;
-        color: #1e40af;
-        margin: 0;
-    }
-    
-    .metric-label {
-        font-size: 0.875rem;
-        color: #6b7280;
-        margin: 0;
-        text-transform: uppercase;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-    }
     </style>
     """, unsafe_allow_html=True)
     
-    # Header with logo and branding
+    # Clean header with WBI-style black/white theme
     st.markdown("""
     <div class="main-header">
         <div class="logo-container">
@@ -850,27 +805,17 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col2:
-        st.markdown("""
-        <div class="wbi-card">
-            <h3 style="color: #1e40af; margin-top: 0;">⚡ The Innovation Pipeline for Naval Objectives</h3>
-            <p style="color: #4b5563; margin-bottom: 1.5rem;">The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
-            
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">🔍 Discover</h4>
-                <p style="color: #6b7280; margin-bottom: 1rem;">Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
-            </div>
-            
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">⚙️ Develop</h4>
-                <p style="color: #6b7280; margin-bottom: 1rem;">iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
-            </div>
-            
-            <div style="margin: 1rem 0;">
-                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">🚀 Deliver</h4>
-                <p style="color: #6b7280; margin-bottom: 0;">With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("### ⚡ The Innovation Pipeline for Naval Objectives")
+        st.markdown("The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.")
+        
+        st.markdown("#### 🔍 Discover")
+        st.markdown("Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.")
+        
+        st.markdown("#### ⚙️ Develop") 
+        st.markdown("iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.")
+        
+        st.markdown("#### 🚀 Deliver")
+        st.markdown("With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.")
         
         if st.button("🔍 Search Companies", type="primary"):
             st.session_state.search_triggered = True
@@ -890,58 +835,28 @@ def main():
         
         st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of {config.base_location}")
         
-        # Summary metrics with proper styling
-        st.markdown("""
-        <div style="margin: 2rem 0;">
-            <h3 style="color: #1e40af; text-align: center; margin-bottom: 1.5rem;">
-                📊 Supplier Intelligence Dashboard
-            </h3>
-        </div>
-        """, unsafe_allow_html=True)
+        # Simple metrics without complex styling
+        st.markdown("### 📊 Supplier Intelligence Dashboard")
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-value">{len(companies)}</p>
-                <p class="metric-label">Total Suppliers</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("Total Suppliers", len(companies))
         with col2:
             high_relevance = len([c for c in companies if c['total_score'] >= 5])
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-value">{high_relevance}</p>
-                <p class="metric-label">High Relevance</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("High Relevance", high_relevance)
         with col3:
             small_businesses = len([c for c in companies if c['size'] == 'Small Business'])
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-value">{small_businesses}</p>
-                <p class="metric-label">Small Businesses</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("Small Businesses", small_businesses)
         with col4:
             avg_distance = sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <p class="metric-value">{avg_distance:.1f} mi</p>
-                <p class="metric-label">Avg Distance</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("Avg Distance", f"{avg_distance:.1f} mi")
         
         # Tabs for different views with enhanced styling
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Supplier Directory", "🗺️ Geographic Intelligence", "📈 Market Analytics", "📋 Intelligence Export"])
         
         with tab1:
-            st.markdown("""
-            <div style="margin-bottom: 2rem;">
-                <h3 style="color: #1e40af;">🏭 Naval Supplier Directory</h3>
-                <p style="color: #6b7280; font-style: italic;">Comprehensive supplier intelligence for naval procurement professionals</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader("🏭 Naval Supplier Directory")
+            st.markdown("*Comprehensive supplier intelligence for naval procurement professionals*")
             
             # Filters
             col1, col2, col3 = st.columns(3)
@@ -961,10 +876,10 @@ def main():
             if max_distance < config.radius_miles:
                 filtered_companies = [c for c in filtered_companies if c['distance_miles'] <= max_distance]
             
-            # Display companies with enhanced styling
+            # Display companies with clean styling
             for company in filtered_companies:
                 with st.expander(f"🏭 {company['name']} (Naval Relevance Score: {company['total_score']})"):
-                    st.markdown(f"**🎯 Supplier Profile**")
+                    st.markdown("**🎯 Supplier Profile**")
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"**📍 Location:** {company['location']}")
@@ -978,7 +893,7 @@ def main():
                     
                     st.markdown(f"**📋 Description:** {company['description']}")
                     
-                    # Relevance breakdown with enhanced styling
+                    # Relevance breakdown
                     st.markdown("**🎯 Naval Relevance Analysis**")
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
@@ -993,12 +908,8 @@ def main():
                         st.metric("👥 Workforce", company['workforce_score'])
         
         with tab2:
-            st.markdown("""
-            <div style="margin-bottom: 2rem;">
-                <h3 style="color: #1e40af;">🗺️ Geographic Supplier Intelligence</h3>
-                <p style="color: #6b7280; font-style: italic;">Visual analysis of supplier distribution and proximity to naval facilities</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader("🗺️ Geographic Supplier Intelligence")
+            st.markdown("*Visual analysis of supplier distribution and proximity to naval facilities*")
             map_fig = create_company_map(companies, searcher.base_coords)
             if map_fig:
                 st.plotly_chart(map_fig, use_container_width=True)
@@ -1006,12 +917,8 @@ def main():
                 st.info("No companies to display on map")
         
         with tab3:
-            st.markdown("""
-            <div style="margin-bottom: 2rem;">
-                <h3 style="color: #1e40af;">📈 Naval Supplier Market Analytics</h3>
-                <p style="color: #6b7280; font-style: italic;">Strategic insights into supplier landscape and market composition</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader("📈 Naval Supplier Market Analytics")
+            st.markdown("*Strategic insights into supplier landscape and market composition*")
             
             if companies:
                 df = pd.DataFrame(companies)
@@ -1042,12 +949,8 @@ def main():
                     st.plotly_chart(fig_bar, use_container_width=True)
         
         with tab4:
-            st.markdown("""
-            <div style="margin-bottom: 2rem;">
-                <h3 style="color: #1e40af;">📋 Supplier Intelligence Export</h3>
-                <p style="color: #6b7280; font-style: italic;">Download comprehensive supplier data for procurement analysis</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.subheader("📋 Supplier Intelligence Export")
+            st.markdown("*Download comprehensive supplier data for procurement analysis*")
             
             if companies:
                 df = pd.DataFrame(companies)
