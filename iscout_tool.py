@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import json
 import time
+import os
 from typing import List, Dict, Optional
 import re
 from dataclasses import dataclass, field
@@ -10,6 +11,23 @@ from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
 import plotly.express as px
 import plotly.graph_objects as go
+
+# API Configuration - Multiple ways to get API key
+GOOGLE_PLACES_API_KEY = (
+    st.secrets.get("GOOGLE_PLACES_API_KEY") if "GOOGLE_PLACES_API_KEY" in st.secrets else
+    os.environ.get("GOOGLE_PLACES_API_KEY", "")
+)
+
+# If no API key found, show input field in sidebar
+if not GOOGLE_PLACES_API_KEY:
+    st.sidebar.info("🔑 To enable real company search, add your Google Places API key:")
+    api_key_input = st.sidebar.text_input(
+        "Google Places API Key:", 
+        type="password",
+        help="Get your API key from Google Cloud Console → Places API"
+    )
+    if api_key_input:
+        GOOGLE_PLACES_API_KEY = api_key_input
 
 # Configuration
 @dataclass
@@ -96,77 +114,255 @@ class CompanySearcher:
         
         return scores
     
+    def search_google_places(self, query: str, radius_meters: int = 50000) -> List[Dict]:
+        """Search Google Places API for real companies"""
+        if not GOOGLE_PLACES_API_KEY:
+            st.warning("⚠️ Google Places API key not configured. Using demo data.")
+            return []
+        
+        companies = []
+        lat, lon = self.base_coords
+        
+        # Google Places API endpoint
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        
+        params = {
+            'location': f'{lat},{lon}',
+            'radius': radius_meters,
+            'keyword': query,
+            'type': 'establishment',
+            'key': GOOGLE_PLACES_API_KEY
+        }
+        
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
+            
+            if data['status'] == 'OK':
+                for place in data['results']:
+                    # Get detailed place information
+                    place_details = self._get_place_details(place['place_id'])
+                    
+                    company = {
+                        'name': place.get('name', 'Unknown'),
+                        'location': place.get('vicinity', 'Unknown'),
+                        'industry': ', '.join(place.get('types', [])),
+                        'description': place_details.get('description', f"Business in {', '.join(place.get('types', []))}"),
+                        'size': 'Unknown',
+                        'capabilities': self._extract_capabilities(place),
+                        'lat': place['geometry']['location']['lat'],
+                        'lon': place['geometry']['location']['lng'],
+                        'website': place_details.get('website', 'Not available'),
+                        'phone': place_details.get('phone', 'Not available'),
+                        'rating': place.get('rating', 0),
+                        'user_ratings_total': place.get('user_ratings_total', 0)
+                    }
+                    companies.append(company)
+            
+        except Exception as e:
+            st.error(f"Error searching Google Places: {e}")
+        
+        return companies
+    
+    def _get_place_details(self, place_id: str) -> Dict:
+        """Get detailed information about a place"""
+        if not GOOGLE_PLACES_API_KEY:
+            return {}
+            
+        url = "https://maps.googleapis.com/maps/api/place/details/json"
+        params = {
+            'place_id': place_id,
+            'fields': 'website,formatted_phone_number,business_status,types',
+            'key': GOOGLE_PLACES_API_KEY
+        }
+        
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
+            
+            if data['status'] == 'OK':
+                result = data['result']
+                return {
+                    'website': result.get('website', 'Not available'),
+                    'phone': result.get('formatted_phone_number', 'Not available'),
+                    'business_status': result.get('business_status', 'Unknown')
+                }
+        except Exception as e:
+            st.error(f"Error getting place details: {e}")
+        
+        return {}
+    
+    def _extract_capabilities(self, place: Dict) -> List[str]:
+        """Extract likely capabilities from place data"""
+        types = place.get('types', [])
+        name = place.get('name', '').lower()
+        
+        capabilities = []
+        
+        # Map place types to capabilities
+        if 'establishment' in types:
+            if any(word in name for word in ['manufacturing', 'machining', 'fabrication']):
+                capabilities.extend(['Manufacturing', 'Fabrication'])
+            if any(word in name for word in ['welding', 'metal']):
+                capabilities.extend(['Welding', 'Metal Working'])
+            if any(word in name for word in ['automation', 'robotics']):
+                capabilities.extend(['Automation', 'Robotics'])
+            if any(word in name for word in ['precision', 'cnc']):
+                capabilities.extend(['Precision Machining', 'CNC'])
+        
+        return capabilities if capabilities else ['General Manufacturing']
+    
+    def search_real_companies(self) -> List[Dict]:
+        """Search for real companies using multiple queries"""
+        all_companies = []
+        
+        # Define search queries for different types of companies
+        search_queries = [
+            "manufacturing",
+            "metal fabrication",
+            "CNC machining",
+            "welding services", 
+            "automation",
+            "robotics",
+            "3D printing",
+            "precision machining",
+            "industrial equipment"
+        ]
+        
+        radius_meters = self.config.radius_miles * 1609  # Convert miles to meters
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, query in enumerate(search_queries):
+            status_text.text(f"Searching for {query} companies...")
+            companies = self.search_google_places(query, radius_meters)
+            all_companies.extend(companies)
+            progress_bar.progress((i + 1) / len(search_queries))
+            time.sleep(0.5)  # Rate limiting
+        
+        status_text.text("Processing results...")
+        
+        # Remove duplicates based on name and location
+        unique_companies = []
+        seen = set()
+        
+        for company in all_companies:
+            key = (company['name'].lower(), company['location'].lower())
+            if key not in seen:
+                seen.add(key)
+                
+                # Add distance and relevance scoring
+                distance = self._calculate_distance(company['lat'], company['lon'])
+                company['distance_miles'] = round(distance, 1)
+                
+                # Add relevance scoring
+                scores = self._score_company_relevance(company)
+                company.update(scores)
+                
+                # Filter by distance
+                if distance <= self.config.radius_miles:
+                    company['within_radius'] = True
+                    unique_companies.append(company)
+        
+        # Sort by relevance score
+        unique_companies.sort(key=lambda x: x['total_score'], reverse=True)
+        
+        progress_bar.empty()
+        status_text.empty()
+        
+        return unique_companies[:self.config.target_company_count]
+    
     def generate_sample_companies(self) -> List[Dict]:
         """Generate sample companies for demonstration"""
+        # Base coordinates for generating realistic sample data
+        base_lat, base_lon = self.base_coords
+        
+        # Enhanced sample companies with location-relevant names
+        location_name = self.config.base_location.split(',')[0]  # Get city name
+        
         sample_companies = [
             {
-                'name': 'Precision Manufacturing Inc.',
-                'location': 'South Bend, IN',
+                'name': f'{location_name} Precision Manufacturing Inc.',
+                'location': f'{location_name}, {self.config.base_location.split(",")[-1].strip()}',
                 'industry': 'Metal Fabrication',
                 'description': 'Advanced CNC machining and precision manufacturing for aerospace and defense applications. Specializes in complex metal components.',
                 'size': 'Small Business',
                 'capabilities': ['CNC Machining', 'Metal Fabrication', 'Quality Control'],
-                'lat': 41.6764 + (0.1 * (hash('Precision Manufacturing Inc.') % 100 - 50) / 50),
-                'lon': -86.2520 + (0.1 * (hash('Precision Manufacturing Inc.') % 100 - 50) / 50),
-                'website': 'www.precisionmfg.com',
-                'phone': '(574) 555-0101'
+                'lat': base_lat + (0.1 * (hash(f'{location_name} Precision Manufacturing Inc.') % 100 - 50) / 50),
+                'lon': base_lon + (0.1 * (hash(f'{location_name} Precision Manufacturing Inc.') % 100 - 50) / 50),
+                'website': f'www.{location_name.lower()}precisionmfg.com',
+                'phone': '(555) 555-0101',
+                'rating': 4.5,
+                'user_ratings_total': 23
             },
             {
-                'name': 'RoboTech Solutions',
-                'location': 'Elkhart, IN',
+                'name': f'{location_name} RoboTech Solutions',
+                'location': f'Near {location_name}',
                 'industry': 'Industrial Automation',
                 'description': 'Robotics integration and automation solutions. FANUC and KUKA certified. Automated inspection systems.',
                 'size': 'Small Business',
                 'capabilities': ['Robotics Integration', 'FANUC Systems', 'Automated Inspection'],
-                'lat': 41.6820,
-                'lon': -85.9767,
-                'website': 'www.robotechsolutions.com',
-                'phone': '(574) 555-0102'
+                'lat': base_lat + 0.05,
+                'lon': base_lon - 0.05,
+                'website': f'www.{location_name.lower()}robotech.com',
+                'phone': '(555) 555-0102',
+                'rating': 4.8,
+                'user_ratings_total': 15
             },
             {
-                'name': 'Advanced Additive Manufacturing',
-                'location': 'Mishawaka, IN',
+                'name': 'Advanced Additive Manufacturing LLC',
+                'location': f'{location_name} Metro Area',
                 'industry': 'Additive Manufacturing',
                 'description': '3D printing and additive manufacturing for rapid prototyping and production parts. Metal and polymer capabilities.',
                 'size': 'Small Business',
                 'capabilities': ['3D Printing', 'Metal Additive', 'Rapid Prototyping'],
-                'lat': 41.6620,
-                'lon': -86.1586,
+                'lat': base_lat - 0.03,
+                'lon': base_lon + 0.08,
                 'website': 'www.advancedadditive.com',
-                'phone': '(574) 555-0103'
+                'phone': '(555) 555-0103',
+                'rating': 4.2,
+                'user_ratings_total': 31
             },
             {
-                'name': 'Autonomous Systems Corp',
-                'location': 'Fort Wayne, IN',
+                'name': 'Regional Autonomous Systems Corp',
+                'location': f'{location_name} Region',
                 'industry': 'Unmanned Systems',
                 'description': 'Development of unmanned systems and autonomous vehicles for defense applications. UAV and UUV expertise.',
                 'size': 'Medium Business',
                 'capabilities': ['UAV Systems', 'Autonomous Navigation', 'Defense Systems'],
-                'lat': 41.0793,
-                'lon': -85.1394,
-                'website': 'www.autonomoussystems.com',
-                'phone': '(260) 555-0104'
+                'lat': base_lat + 0.08,
+                'lon': base_lon + 0.12,
+                'website': 'www.regionalautonomous.com',
+                'phone': '(555) 555-0104',
+                'rating': 4.7,
+                'user_ratings_total': 8
             },
             {
-                'name': 'Industrial Welding Specialists',
-                'location': 'Goshen, IN',
+                'name': f'{location_name} Industrial Welding Specialists',
+                'location': f'{location_name} Industrial District',
                 'industry': 'Welding Services',
                 'description': 'Robotic welding and advanced welding techniques for heavy manufacturing. Certified for military specifications.',
                 'size': 'Small Business',
                 'capabilities': ['Robotic Welding', 'MIL-SPEC Welding', 'Heavy Fabrication'],
-                'lat': 41.5823,
-                'lon': -85.8344,
-                'website': 'www.indwelding.com',
-                'phone': '(574) 555-0105'
+                'lat': base_lat - 0.07,
+                'lon': base_lon - 0.09,
+                'website': f'www.{location_name.lower()}welding.com',
+                'phone': '(555) 555-0105',
+                'rating': 4.6,
+                'user_ratings_total': 19
             }
         ]
         
-        # Generate additional sample companies
-        base_names = [
-            'Midwest Precision', 'Great Lakes Manufacturing', 'Hoosier Tech',
-            'Northern Indiana Fabrication', 'Lakeland Automation', 'Tri-State Manufacturing',
-            'Indiana Advanced Systems', 'Heartland Robotics', 'Michiana Manufacturing',
-            'Prairie Manufacturing', 'Crossroads Automation', 'Heritage Manufacturing'
+        # Generate additional sample companies around the base location
+        regional_prefixes = [
+            'Metro', 'Regional', 'Coastal', 'Valley', 'Industrial', 'Maritime',
+            'Advanced', 'Precision', 'Integrated', 'Strategic', 'Elite', 'Premier'
+        ]
+        
+        company_types = [
+            'Manufacturing', 'Technologies', 'Solutions', 'Systems', 'Industries',
+            'Fabrication', 'Automation', 'Engineering', 'Dynamics', 'Innovations'
         ]
         
         industries = [
@@ -184,32 +380,39 @@ class CompanySearcher:
             ['Metal Working', 'Precision Parts', 'Tooling']
         ]
         
-        for i, base_name in enumerate(base_names):
+        for i in range(min(15, len(regional_prefixes))):  # Generate 15 additional companies
             if len(sample_companies) >= 50:  # Limit sample size
                 break
                 
+            prefix = regional_prefixes[i % len(regional_prefixes)]
+            company_type = company_types[i % len(company_types)]
+            company_name = f'{prefix} {company_type}'
+            
+            # Generate coordinates within the search radius
+            angle = (i * 137.5) % 360  # Golden angle for good distribution
+            distance_factor = 0.3 + (i % 5) * 0.1  # Varying distances
+            
+            lat_offset = distance_factor * 0.5 * (1 if i % 2 == 0 else -1)
+            lon_offset = distance_factor * 0.5 * (1 if i % 3 == 0 else -1)
+            
             company = {
-                'name': f'{base_name} {"Corp" if i % 3 == 0 else "LLC" if i % 3 == 1 else "Inc."}',
-                'location': f'Indiana City {i+1}, IN',
+                'name': f'{company_name} {"Corp" if i % 3 == 0 else "LLC" if i % 3 == 1 else "Inc."}',
+                'location': f'{location_name} Region',
                 'industry': industries[i % len(industries)],
-                'description': f'Specialized manufacturing and technology services. Expert in {industries[i % len(industries)].lower()} solutions.',
+                'description': f'Specialized {industries[i % len(industries)].lower()} services for defense and commercial applications.',
                 'size': 'Small Business' if i % 4 != 0 else 'Medium Business',
                 'capabilities': capabilities_pool[i % len(capabilities_pool)],
-                'lat': 41.6764 + (0.5 * (hash(base_name) % 100 - 50) / 50),
-                'lon': -86.2520 + (0.5 * (hash(base_name) % 100 - 50) / 50),
-                'website': f'www.{base_name.lower().replace(" ", "")}.com',
-                'phone': f'(574) 555-{1000 + i:04d}'
+                'lat': base_lat + lat_offset,
+                'lon': base_lon + lon_offset,
+                'website': f'www.{prefix.lower()}{company_type.lower()}.com',
+                'phone': f'(555) 555-{1000 + i:04d}',
+                'rating': round(3.5 + (i % 15) * 0.1, 1),
+                'user_ratings_total': 5 + (i % 25)
             }
             sample_companies.append(company)
         
-        return sample_companies
-    
-    def search_companies(self) -> List[Dict]:
-        """Main search function - returns sample data for demo"""
-        companies = self.generate_sample_companies()
-        
-        # Add distance and relevance scoring
-        for company in companies:
+        # Add distance and relevance scoring for sample companies
+        for company in sample_companies:
             distance = self._calculate_distance(company['lat'], company['lon'])
             company['distance_miles'] = round(distance, 1)
             
@@ -224,10 +427,29 @@ class CompanySearcher:
                 company['within_radius'] = False
         
         # Filter and sort
-        valid_companies = [c for c in companies if c['within_radius']]
+        valid_companies = [c for c in sample_companies if c['within_radius']]
         valid_companies.sort(key=lambda x: x['total_score'], reverse=True)
         
         return valid_companies[:self.config.target_company_count]
+    
+    def search_companies(self) -> List[Dict]:
+        """Main search function - can use real API or demo data"""
+        
+        # Check if we should use real API search
+        use_real_search = st.sidebar.checkbox(
+            "🔍 Use Real Company Search", 
+            value=False,
+            help="Enable this to search real companies using Google Places API (requires API key)"
+        )
+        
+        if use_real_search and GOOGLE_PLACES_API_KEY:
+            return self.search_real_companies()
+        elif use_real_search and not GOOGLE_PLACES_API_KEY:
+            st.sidebar.error("❌ Google Places API key required for real search")
+            st.sidebar.info("Add your API key at the top of the code file")
+            return self.generate_sample_companies()
+        else:
+            return self.generate_sample_companies()
 
 def create_company_map(companies: List[Dict], base_coords: tuple):
     """Create interactive map of companies"""
@@ -276,7 +498,7 @@ def create_company_map(companies: List[Dict], base_coords: tuple):
             zoom=8
         ),
         height=600,
-        title="Naval Supplier Companies in South Bend Region"
+        title="Naval Supplier Companies in Selected Region"
     )
     
     return fig
@@ -295,6 +517,41 @@ def main():
     st.sidebar.header("Search Configuration")
     
     config = SearchConfig()
+    
+    # Location selection
+    st.sidebar.subheader("📍 Search Location")
+    
+    location_option = st.sidebar.radio(
+        "Choose search center:",
+        ["Preset Naval Locations", "Custom Location"]
+    )
+    
+    if location_option == "Preset Naval Locations":
+        preset_locations = {
+            "South Bend, Indiana": "South Bend, Indiana",
+            "Norfolk, Virginia (Naval Station Norfolk)": "Norfolk, Virginia",
+            "San Diego, California (Naval Base San Diego)": "San Diego, California", 
+            "Pearl Harbor, Hawaii": "Pearl Harbor, Hawaii",
+            "Bremerton, Washington (Puget Sound Naval Shipyard)": "Bremerton, Washington",
+            "Portsmouth, New Hampshire (Portsmouth Naval Shipyard)": "Portsmouth, New Hampshire",
+            "Newport News, Virginia (Newport News Shipbuilding)": "Newport News, Virginia",
+            "Bath, Maine (Bath Iron Works)": "Bath, Maine",
+            "Groton, Connecticut (Electric Boat)": "Groton, Connecticut",
+            "Pascagoula, Mississippi (Ingalls Shipbuilding)": "Pascagoula, Mississippi"
+        }
+        
+        selected_preset = st.sidebar.selectbox(
+            "Select naval location:",
+            list(preset_locations.keys())
+        )
+        config.base_location = preset_locations[selected_preset]
+        
+    else:  # Custom Location
+        config.base_location = st.sidebar.text_input(
+            "Enter custom location:",
+            value="South Bend, Indiana",
+            help="Enter city, state (e.g., 'Detroit, Michigan' or 'Seattle, Washington')"
+        )
     
     # Search parameters
     config.radius_miles = st.sidebar.slider("Search Radius (miles)", 10, 100, 60)
@@ -356,7 +613,7 @@ def main():
         companies = st.session_state.companies
         searcher = st.session_state.searcher
         
-        st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of South Bend, IN")
+        st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of {config.base_location}")
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -483,7 +740,7 @@ def main():
             st.markdown(f"""
             **iScout Naval Supplier Search Results**
             
-            - **Search Area:** {config.radius_miles} miles from South Bend, IN
+            - **Search Area:** {config.radius_miles} miles from {config.base_location}
             - **Companies Found:** {len(companies)}
             - **Small Businesses:** {len([c for c in companies if c['size'] == 'Small Business'])}
             - **High Relevance (Score ≥ 5):** {len([c for c in companies if c['total_score'] >= 5])}
