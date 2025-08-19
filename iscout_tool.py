@@ -18,17 +18,6 @@ GOOGLE_PLACES_API_KEY = (
     os.environ.get("GOOGLE_PLACES_API_KEY", "")
 )
 
-# If no API key found, show input field in sidebar
-if not GOOGLE_PLACES_API_KEY:
-    st.sidebar.info("🔑 To enable real company search, add your Google Places API key:")
-    api_key_input = st.sidebar.text_input(
-        "Google Places API Key:", 
-        type="password",
-        help="Get your API key from Google Cloud Console → Places API"
-    )
-    if api_key_input:
-        GOOGLE_PLACES_API_KEY = api_key_input
-
 # Configuration
 @dataclass
 class SearchConfig:
@@ -114,153 +103,47 @@ class CompanySearcher:
         
         return scores
     
-    def search_google_places(self, query: str, radius_meters: int = 50000) -> List[Dict]:
-        """Search Google Places API for real companies"""
-        if not GOOGLE_PLACES_API_KEY:
-            return []
+    def search_companies(self) -> List[Dict]:
+        """Main search function - can use real API or demo data"""
         
-        companies = []
-        lat, lon = self.base_coords
+        # Check if we should force demo mode
+        if st.session_state.get('force_demo', False):
+            return self.generate_sample_companies()
         
-        # Google Places API endpoint
-        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        # Check if we should use real API search
+        use_real_search = st.sidebar.checkbox(
+            "🔍 Use Real Company Search", 
+            value=False,
+            help="Enable this to search real companies using Google Places API (requires API key)"
+        )
         
-        params = {
-            'location': f'{lat},{lon}',
-            'radius': radius_meters,
-            'keyword': query,
-            'type': 'establishment',
-            'key': GOOGLE_PLACES_API_KEY
-        }
-        
-        try:
-            st.write(f"🔍 Searching for '{query}' near {lat}, {lon} within {radius_meters/1609:.1f} miles...")
-            response = requests.get(url, params=params, timeout=10)
-            
-            st.write(f"API Response Status: {response.status_code}")
-            
-            if response.status_code != 200:
-                st.error(f"API request failed with status {response.status_code}: {response.text}")
-                return []
-            
-            data = response.json()
-            st.write(f"API Response Status: {data.get('status', 'Unknown')}")
-            
-            if data['status'] == 'OK':
-                st.write(f"Found {len(data['results'])} results for '{query}'")
-                for place in data['results']:
-                    company = {
-                        'name': place.get('name', 'Unknown'),
-                        'location': place.get('vicinity', 'Unknown'),
-                        'industry': ', '.join(place.get('types', [])),
-                        'description': f"Business in {', '.join(place.get('types', []))}",
-                        'size': 'Unknown',
-                        'capabilities': self._extract_capabilities(place),
-                        'lat': place['geometry']['location']['lat'],
-                        'lon': place['geometry']['location']['lng'],
-                        'website': 'Not available',
-                        'phone': 'Not available',
-                        'rating': place.get('rating', 0),
-                        'user_ratings_total': place.get('user_ratings_total', 0)
-                    }
-                    companies.append(company)
-            elif data['status'] == 'ZERO_RESULTS':
-                st.warning(f"No results found for '{query}' in this area")
-            elif data['status'] == 'REQUEST_DENIED':
-                st.error(f"API request denied. Check your API key and billing settings. Error: {data.get('error_message', 'Unknown error')}")
-            elif data['status'] == 'INVALID_REQUEST':
-                st.error(f"Invalid request. Check parameters. Error: {data.get('error_message', 'Unknown error')}")
-            else:
-                st.error(f"API Error: {data.get('status')} - {data.get('error_message', 'Unknown error')}")
-            
-        except requests.exceptions.Timeout:
-            st.error(f"Request timeout while searching for '{query}'")
-        except requests.exceptions.RequestException as e:
-            st.error(f"Network error while searching for '{query}': {str(e)}")
-        except Exception as e:
-            st.error(f"Unexpected error searching for '{query}': {str(e)}")
-        
-        return companies
-    
-    def _get_place_details(self, place_id: str) -> Dict:
-        """Get detailed information about a place"""
-        if not GOOGLE_PLACES_API_KEY:
-            return {}
-            
-        url = "https://maps.googleapis.com/maps/api/place/details/json"
-        params = {
-            'place_id': place_id,
-            'fields': 'website,formatted_phone_number,business_status,types',
-            'key': GOOGLE_PLACES_API_KEY
-        }
-        
-        try:
-            response = requests.get(url, params=params)
-            data = response.json()
-            
-            if data['status'] == 'OK':
-                result = data['result']
-                return {
-                    'website': result.get('website', 'Not available'),
-                    'phone': result.get('formatted_phone_number', 'Not available'),
-                    'business_status': result.get('business_status', 'Unknown')
-                }
-        except Exception as e:
-            st.error(f"Error getting place details: {e}")
-        
-        return {}
-    
-    def _extract_capabilities(self, place: Dict) -> List[str]:
-        """Extract likely capabilities from place data"""
-        types = place.get('types', [])
-        name = place.get('name', '').lower()
-        
-        capabilities = []
-        
-        # Map place types to capabilities
-        if 'establishment' in types:
-            if any(word in name for word in ['manufacturing', 'machining', 'fabrication']):
-                capabilities.extend(['Manufacturing', 'Fabrication'])
-            if any(word in name for word in ['welding', 'metal']):
-                capabilities.extend(['Welding', 'Metal Working'])
-            if any(word in name for word in ['automation', 'robotics']):
-                capabilities.extend(['Automation', 'Robotics'])
-            if any(word in name for word in ['precision', 'cnc']):
-                capabilities.extend(['Precision Machining', 'CNC'])
-        
-        return capabilities if capabilities else ['General Manufacturing']
+        if use_real_search and GOOGLE_PLACES_API_KEY:
+            st.info("🔍 Searching real companies... This may take a moment.")
+            return self.search_real_companies()
+        elif use_real_search and not GOOGLE_PLACES_API_KEY:
+            st.sidebar.error("❌ Google Places API key required for real search")
+            st.sidebar.info("Add your API key in the sidebar above")
+            return self.generate_sample_companies()
+        else:
+            return self.generate_sample_companies()
     
     def search_real_companies(self) -> List[Dict]:
-        """Search for real companies using multiple queries"""
+        """Search for real companies using Google Places API"""
         all_companies = []
         
         if not GOOGLE_PLACES_API_KEY:
             st.error("🔑 Google Places API key is required for real search")
             return []
         
-        st.info(f"🔍 Searching for real companies near {self.config.base_location}")
+        # Search queries
+        search_queries = ["manufacturing", "metal fabrication", "machining", "welding"]
         
-        # Define search queries for different types of companies
-        search_queries = [
-            "manufacturing",
-            "metal fabrication", 
-            "machining",
-            "welding"
-        ]
+        for query in search_queries:
+            companies = self.search_google_places_text(query)
+            all_companies.extend(companies)
+            time.sleep(1)  # Rate limiting
         
-        radius_meters = min(self.config.radius_miles * 1609, 50000)  # Google limit is 50km
-        st.write(f"Search radius: {radius_meters/1609:.1f} miles ({radius_meters} meters)")
-        
-        for i, query in enumerate(search_queries):
-            with st.expander(f"Searching: {query}", expanded=True):
-                companies = self.search_google_places(query, radius_meters)
-                all_companies.extend(companies)
-                st.write(f"Added {len(companies)} companies from '{query}' search")
-                time.sleep(1)  # Rate limiting
-        
-        st.write(f"Total companies found before filtering: {len(all_companies)}")
-        
-        # Remove duplicates based on name and location
+        # Remove duplicates and process
         unique_companies = []
         seen = set()
         
@@ -279,38 +162,139 @@ class CompanySearcher:
                 
                 # Filter by distance
                 if distance <= self.config.radius_miles:
-                    company['within_radius'] = True
                     unique_companies.append(company)
-        
-        st.write(f"Unique companies within radius: {len(unique_companies)}")
         
         # Sort by relevance score
         unique_companies.sort(key=lambda x: x['total_score'], reverse=True)
         
-        final_companies = unique_companies[:self.config.target_company_count]
-        st.success(f"✅ Returning {len(final_companies)} companies")
+        return unique_companies[:self.config.target_company_count]
+    
+    def search_google_places_text(self, query: str) -> List[Dict]:
+        """Search Google Places using text search"""
+        if not GOOGLE_PLACES_API_KEY:
+            return []
         
-        return final_companies
+        companies = []
+        lat, lon = self.base_coords
+        
+        # Use the simpler text search API
+        url = "https://places.googleapis.com/v1/places:searchText"
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+            'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount'
+        }
+        
+        request_data = {
+            "textQuery": f"{query} near {self.config.base_location}",
+            "maxResultCount": 20
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=request_data, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                places = data.get('places', [])
+                
+                for place in places:
+                    # Check if this place is within our radius
+                    place_lat = place.get('location', {}).get('latitude', 0)
+                    place_lon = place.get('location', {}).get('longitude', 0)
+                    
+                    if place_lat and place_lon:
+                        distance = geodesic(self.base_coords, (place_lat, place_lon)).miles
+                        
+                        if distance <= self.config.radius_miles:
+                            name = place.get('displayName', {}).get('text', 'Unknown')
+                            types = place.get('types', [])
+                            
+                            # Filter for manufacturing-related businesses
+                            if self._is_manufacturing_related(name, types):
+                                company = {
+                                    'name': name,
+                                    'location': place.get('formattedAddress', 'Unknown'),
+                                    'industry': ', '.join(types[:2]),
+                                    'description': f"Business type: {', '.join(types[:2])}",
+                                    'size': 'Unknown',
+                                    'capabilities': self._extract_capabilities_from_name_and_types(name, types),
+                                    'lat': place_lat,
+                                    'lon': place_lon,
+                                    'website': place.get('websiteUri', 'Not available'),
+                                    'phone': place.get('nationalPhoneNumber', 'Not available'),
+                                    'rating': place.get('rating', 0),
+                                    'user_ratings_total': place.get('userRatingCount', 0)
+                                }
+                                companies.append(company)
+                
+            elif response.status_code == 403:
+                st.error("❌ API key doesn't have permission. Make sure 'Places API (New)' is enabled and billing is set up.")
+            else:
+                st.warning(f"Search for '{query}' returned status {response.status_code}")
+            
+        except Exception as e:
+            st.warning(f"Error searching for '{query}': {str(e)}")
+        
+        return companies
+    
+    def _is_manufacturing_related(self, name: str, types: List[str]) -> bool:
+        """Check if a business is manufacturing-related"""
+        name_lower = name.lower()
+        types_str = ' '.join(types).lower()
+        
+        manufacturing_keywords = [
+            'manufacturing', 'fabrication', 'machining', 'welding', 'metal',
+            'precision', 'cnc', 'automation', 'robotics', 'industrial',
+            'engineering', 'machine', 'tool', 'assembly', 'production'
+        ]
+        
+        for keyword in manufacturing_keywords:
+            if keyword in name_lower or keyword in types_str:
+                return True
+        
+        return False
+    
+    def _extract_capabilities_from_name_and_types(self, name: str, types: List[str]) -> List[str]:
+        """Extract capabilities from name and types"""
+        name_lower = name.lower()
+        capabilities = []
+        
+        capability_mapping = {
+            'cnc': 'CNC Machining',
+            'machining': 'Precision Machining',
+            'welding': 'Welding Services',
+            'fabrication': 'Metal Fabrication',
+            'manufacturing': 'Manufacturing',
+            'automation': 'Industrial Automation',
+            'robotics': 'Robotics Integration',
+            'precision': 'Precision Manufacturing',
+            'metal': 'Metal Working',
+            'assembly': 'Assembly Services'
+        }
+        
+        for keyword, capability in capability_mapping.items():
+            if keyword in name_lower:
+                capabilities.append(capability)
+        
+        return capabilities if capabilities else ['General Manufacturing']
     
     def generate_sample_companies(self) -> List[Dict]:
         """Generate sample companies for demonstration"""
-        # Base coordinates for generating realistic sample data
         base_lat, base_lon = self.base_coords
-        
-        # Enhanced sample companies with location-relevant names
-        location_name = self.config.base_location.split(',')[0]  # Get city name
+        location_name = self.config.base_location.split(',')[0]
         
         sample_companies = [
             {
                 'name': f'{location_name} Precision Manufacturing Inc.',
                 'location': f'{location_name}, {self.config.base_location.split(",")[-1].strip()}',
                 'industry': 'Metal Fabrication',
-                'description': 'Advanced CNC machining and precision manufacturing for aerospace and defense applications. Specializes in complex metal components.',
+                'description': 'Advanced CNC machining and precision manufacturing for aerospace and defense applications.',
                 'size': 'Small Business',
                 'capabilities': ['CNC Machining', 'Metal Fabrication', 'Quality Control'],
-                'lat': base_lat + (0.1 * (hash(f'{location_name} Precision Manufacturing Inc.') % 100 - 50) / 50),
-                'lon': base_lon + (0.1 * (hash(f'{location_name} Precision Manufacturing Inc.') % 100 - 50) / 50),
-                'website': f'www.{location_name.lower()}precisionmfg.com',
+                'lat': base_lat + 0.05,
+                'lon': base_lon + 0.03,
+                'website': f'www.{location_name.lower()}precision.com',
                 'phone': '(555) 555-0101',
                 'rating': 4.5,
                 'user_ratings_total': 23
@@ -319,11 +303,11 @@ class CompanySearcher:
                 'name': f'{location_name} RoboTech Solutions',
                 'location': f'Near {location_name}',
                 'industry': 'Industrial Automation',
-                'description': 'Robotics integration and automation solutions. FANUC and KUKA certified. Automated inspection systems.',
+                'description': 'Robotics integration and automation solutions. FANUC and KUKA certified.',
                 'size': 'Small Business',
                 'capabilities': ['Robotics Integration', 'FANUC Systems', 'Automated Inspection'],
-                'lat': base_lat + 0.05,
-                'lon': base_lon - 0.05,
+                'lat': base_lat - 0.08,
+                'lon': base_lon + 0.12,
                 'website': f'www.{location_name.lower()}robotech.com',
                 'phone': '(555) 555-0102',
                 'rating': 4.8,
@@ -333,11 +317,11 @@ class CompanySearcher:
                 'name': 'Advanced Additive Manufacturing LLC',
                 'location': f'{location_name} Metro Area',
                 'industry': 'Additive Manufacturing',
-                'description': '3D printing and additive manufacturing for rapid prototyping and production parts. Metal and polymer capabilities.',
+                'description': '3D printing and additive manufacturing for rapid prototyping and production parts.',
                 'size': 'Small Business',
                 'capabilities': ['3D Printing', 'Metal Additive', 'Rapid Prototyping'],
-                'lat': base_lat - 0.03,
-                'lon': base_lon + 0.08,
+                'lat': base_lat + 0.12,
+                'lon': base_lon - 0.05,
                 'website': 'www.advancedadditive.com',
                 'phone': '(555) 555-0103',
                 'rating': 4.2,
@@ -347,25 +331,25 @@ class CompanySearcher:
                 'name': 'Regional Autonomous Systems Corp',
                 'location': f'{location_name} Region',
                 'industry': 'Unmanned Systems',
-                'description': 'Development of unmanned systems and autonomous vehicles for defense applications. UAV and UUV expertise.',
+                'description': 'Development of unmanned systems and autonomous vehicles for defense applications.',
                 'size': 'Medium Business',
                 'capabilities': ['UAV Systems', 'Autonomous Navigation', 'Defense Systems'],
-                'lat': base_lat + 0.08,
-                'lon': base_lon + 0.12,
+                'lat': base_lat - 0.15,
+                'lon': base_lon - 0.08,
                 'website': 'www.regionalautonomous.com',
                 'phone': '(555) 555-0104',
                 'rating': 4.7,
                 'user_ratings_total': 8
             },
             {
-                'name': f'{location_name} Industrial Welding Specialists',
+                'name': f'{location_name} Industrial Welding',
                 'location': f'{location_name} Industrial District',
                 'industry': 'Welding Services',
-                'description': 'Robotic welding and advanced welding techniques for heavy manufacturing. Certified for military specifications.',
+                'description': 'Robotic welding and advanced welding techniques for heavy manufacturing.',
                 'size': 'Small Business',
                 'capabilities': ['Robotic Welding', 'MIL-SPEC Welding', 'Heavy Fabrication'],
-                'lat': base_lat - 0.07,
-                'lon': base_lon - 0.09,
+                'lat': base_lat + 0.18,
+                'lon': base_lon + 0.15,
                 'website': f'www.{location_name.lower()}welding.com',
                 'phone': '(555) 555-0105',
                 'rating': 4.6,
@@ -373,102 +357,18 @@ class CompanySearcher:
             }
         ]
         
-        # Generate additional sample companies around the base location
-        regional_prefixes = [
-            'Metro', 'Regional', 'Coastal', 'Valley', 'Industrial', 'Maritime',
-            'Advanced', 'Precision', 'Integrated', 'Strategic', 'Elite', 'Premier'
-        ]
-        
-        company_types = [
-            'Manufacturing', 'Technologies', 'Solutions', 'Systems', 'Industries',
-            'Fabrication', 'Automation', 'Engineering', 'Dynamics', 'Innovations'
-        ]
-        
-        industries = [
-            'Metal Fabrication', 'Industrial Automation', 'Precision Machining',
-            'Additive Manufacturing', 'Assembly Services', 'Quality Control',
-            'Robotics Integration', 'Welding Services', 'Manufacturing Services'
-        ]
-        
-        capabilities_pool = [
-            ['CNC Machining', 'Quality Control', 'Assembly'],
-            ['Robotics', 'Automation', 'Integration'],
-            ['Welding', 'Fabrication', 'Assembly'],
-            ['3D Printing', 'Rapid Prototyping', 'Design'],
-            ['Inspection', 'Testing', 'Certification'],
-            ['Metal Working', 'Precision Parts', 'Tooling']
-        ]
-        
-        for i in range(min(15, len(regional_prefixes))):  # Generate 15 additional companies
-            if len(sample_companies) >= 50:  # Limit sample size
-                break
-                
-            prefix = regional_prefixes[i % len(regional_prefixes)]
-            company_type = company_types[i % len(company_types)]
-            company_name = f'{prefix} {company_type}'
-            
-            # Generate coordinates within the search radius
-            angle = (i * 137.5) % 360  # Golden angle for good distribution
-            distance_factor = 0.3 + (i % 5) * 0.1  # Varying distances
-            
-            lat_offset = distance_factor * 0.5 * (1 if i % 2 == 0 else -1)
-            lon_offset = distance_factor * 0.5 * (1 if i % 3 == 0 else -1)
-            
-            company = {
-                'name': f'{company_name} {"Corp" if i % 3 == 0 else "LLC" if i % 3 == 1 else "Inc."}',
-                'location': f'{location_name} Region',
-                'industry': industries[i % len(industries)],
-                'description': f'Specialized {industries[i % len(industries)].lower()} services for defense and commercial applications.',
-                'size': 'Small Business' if i % 4 != 0 else 'Medium Business',
-                'capabilities': capabilities_pool[i % len(capabilities_pool)],
-                'lat': base_lat + lat_offset,
-                'lon': base_lon + lon_offset,
-                'website': f'www.{prefix.lower()}{company_type.lower()}.com',
-                'phone': f'(555) 555-{1000 + i:04d}',
-                'rating': round(3.5 + (i % 15) * 0.1, 1),
-                'user_ratings_total': 5 + (i % 25)
-            }
-            sample_companies.append(company)
-        
-        # Add distance and relevance scoring for sample companies
+        # Add distance and relevance scoring
         for company in sample_companies:
             distance = self._calculate_distance(company['lat'], company['lon'])
             company['distance_miles'] = round(distance, 1)
             
-            # Add relevance scoring
             scores = self._score_company_relevance(company)
             company.update(scores)
-            
-            # Filter by distance
-            if distance <= self.config.radius_miles:
-                company['within_radius'] = True
-            else:
-                company['within_radius'] = False
         
-        # Filter and sort
-        valid_companies = [c for c in sample_companies if c['within_radius']]
-        valid_companies.sort(key=lambda x: x['total_score'], reverse=True)
+        # Sort by relevance score
+        sample_companies.sort(key=lambda x: x['total_score'], reverse=True)
         
-        return valid_companies[:self.config.target_company_count]
-    
-    def search_companies(self) -> List[Dict]:
-        """Main search function - can use real API or demo data"""
-        
-        # Check if we should use real API search
-        use_real_search = st.sidebar.checkbox(
-            "🔍 Use Real Company Search", 
-            value=False,
-            help="Enable this to search real companies using Google Places API (requires API key)"
-        )
-        
-        if use_real_search and GOOGLE_PLACES_API_KEY:
-            return self.search_real_companies()
-        elif use_real_search and not GOOGLE_PLACES_API_KEY:
-            st.sidebar.error("❌ Google Places API key required for real search")
-            st.sidebar.info("Add your API key at the top of the code file")
-            return self.generate_sample_companies()
-        else:
-            return self.generate_sample_companies()
+        return sample_companies
 
 def create_company_map(companies: List[Dict], base_coords: tuple):
     """Create interactive map of companies"""
@@ -476,10 +376,6 @@ def create_company_map(companies: List[Dict], base_coords: tuple):
         return None
     
     df = pd.DataFrame(companies)
-    
-    # Create color coding based on relevance score
-    df['color'] = df['total_score'].apply(lambda x: 
-        'red' if x >= 5 else 'orange' if x >= 3 else 'yellow' if x >= 1 else 'lightblue')
     
     fig = go.Figure()
     
@@ -489,7 +385,7 @@ def create_company_map(companies: List[Dict], base_coords: tuple):
         lon=[base_coords[1]],
         mode='markers',
         marker=dict(size=20, color='blue'),
-        text=['South Bend, IN (Base)'],
+        text=['Search Center'],
         name='Base Location'
     ))
     
@@ -535,6 +431,27 @@ def main():
     # Sidebar configuration
     st.sidebar.header("Search Configuration")
     
+    # API Key input if not found
+    if not GOOGLE_PLACES_API_KEY:
+        st.sidebar.info("🔑 To enable real company search, add your Google Places API key:")
+        st.sidebar.markdown("**Steps:**")
+        st.sidebar.markdown("1. Go to [Google Cloud Console](https://console.cloud.google.com)")
+        st.sidebar.markdown("2. Enable 'Places API (New)'")
+        st.sidebar.markdown("3. Create an API key")
+        st.sidebar.markdown("4. Paste it below:")
+        api_key_input = st.sidebar.text_input(
+            "Google Places API Key:", 
+            type="password",
+            help="Make sure to enable 'Places API (New)'"
+        )
+        if api_key_input:
+            # This is a simple workaround for session
+            st.session_state.api_key = api_key_input
+            global GOOGLE_PLACES_API_KEY
+            GOOGLE_PLACES_API_KEY = api_key_input
+    else:
+        st.sidebar.success("✅ API key configured")
+    
     config = SearchConfig()
     
     # Location selection
@@ -569,7 +486,7 @@ def main():
         config.base_location = st.sidebar.text_input(
             "Enter custom location:",
             value="South Bend, Indiana",
-            help="Enter city, state (e.g., 'Detroit, Michigan' or 'Seattle, Washington')"
+            help="Enter city, state (e.g., 'Detroit, Michigan')"
         )
     
     # Search parameters
@@ -611,7 +528,7 @@ def main():
         
         **Technology Solutions:**
         - Advanced Manufacturing
-        - Robotics & Automation
+        - Robotics & Automation  
         - Unmanned Systems
         - Additive Manufacturing
         """)
@@ -645,14 +562,13 @@ def main():
             small_businesses = len([c for c in companies if c['size'] == 'Small Business'])
             st.metric("Small Businesses", small_businesses)
         with col4:
-            avg_distance = sum(c['distance_miles'] for c in companies) / len(companies)
+            avg_distance = sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
             st.metric("Avg Distance", f"{avg_distance:.1f} mi")
         
         # Tabs for different views
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Company List", "🗺️ Map View", "📈 Analytics", "📋 Export"])
         
         with tab1:
-            # Company list with filtering
             st.subheader("Company Directory")
             
             # Filters
@@ -674,7 +590,7 @@ def main():
                 filtered_companies = [c for c in filtered_companies if c['distance_miles'] <= max_distance]
             
             # Display companies
-            for i, company in enumerate(filtered_companies):
+            for company in filtered_companies:
                 with st.expander(f"🏭 {company['name']} (Score: {company['total_score']})"):
                     col1, col2 = st.columns(2)
                     with col1:
@@ -706,70 +622,70 @@ def main():
             if map_fig:
                 st.plotly_chart(map_fig, use_container_width=True)
             else:
-                st.info("Map requires additional setup. Showing basic location data.")
-                df = pd.DataFrame(companies)
-                st.dataframe(df[['name', 'location', 'distance_miles', 'total_score']])
+                st.info("No companies to display on map")
         
         with tab3:
             st.subheader("Search Analytics")
             
-            df = pd.DataFrame(companies)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Score distribution
-                fig_hist = px.histogram(df, x='total_score', title='Relevance Score Distribution')
-                st.plotly_chart(fig_hist, use_container_width=True)
+            if companies:
+                df = pd.DataFrame(companies)
                 
-                # Industry distribution
-                industry_counts = df['industry'].value_counts()
-                fig_pie = px.pie(values=industry_counts.values, names=industry_counts.index, 
-                               title='Industry Distribution')
-                st.plotly_chart(fig_pie, use_container_width=True)
-            
-            with col2:
-                # Distance vs Score scatter
-                fig_scatter = px.scatter(df, x='distance_miles', y='total_score', 
-                                       hover_name='name', title='Distance vs Relevance Score')
-                st.plotly_chart(fig_scatter, use_container_width=True)
+                col1, col2 = st.columns(2)
                 
-                # Size distribution
-                size_counts = df['size'].value_counts()
-                fig_bar = px.bar(x=size_counts.index, y=size_counts.values, 
-                               title='Company Size Distribution')
-                st.plotly_chart(fig_bar, use_container_width=True)
+                with col1:
+                    # Score distribution
+                    fig_hist = px.histogram(df, x='total_score', title='Relevance Score Distribution')
+                    st.plotly_chart(fig_hist, use_container_width=True)
+                    
+                    # Industry distribution
+                    industry_counts = df['industry'].value_counts()
+                    fig_pie = px.pie(values=industry_counts.values, names=industry_counts.index, 
+                                   title='Industry Distribution')
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with col2:
+                    # Distance vs Score scatter
+                    fig_scatter = px.scatter(df, x='distance_miles', y='total_score', 
+                                           hover_name='name', title='Distance vs Relevance Score')
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+                    
+                    # Size distribution
+                    size_counts = df['size'].value_counts()
+                    fig_bar = px.bar(x=size_counts.index, y=size_counts.values, 
+                                   title='Company Size Distribution')
+                    st.plotly_chart(fig_bar, use_container_width=True)
         
         with tab4:
             st.subheader("Export Results")
             
-            df = pd.DataFrame(companies)
-            
-            # Create downloadable CSV
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"iscout_naval_suppliers_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-            
-            # Summary report
-            st.subheader("Summary Report")
-            st.markdown(f"""
-            **iScout Naval Supplier Search Results**
-            
-            - **Search Area:** {config.radius_miles} miles from {config.base_location}
-            - **Companies Found:** {len(companies)}
-            - **Small Businesses:** {len([c for c in companies if c['size'] == 'Small Business'])}
-            - **High Relevance (Score ≥ 5):** {len([c for c in companies if c['total_score'] >= 5])}
-            
-            **Top 5 Companies by Relevance:**
-            """)
-            
-            top_companies = sorted(companies, key=lambda x: x['total_score'], reverse=True)[:5]
-            for i, company in enumerate(top_companies, 1):
-                st.markdown(f"{i}. **{company['name']}** - Score: {company['total_score']} - {company['industry']}")
+            if companies:
+                df = pd.DataFrame(companies)
+                
+                # Create downloadable CSV
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"iscout_naval_suppliers_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+                
+                # Summary report
+                st.subheader("Summary Report")
+                st.markdown(f"""
+                **iScout Naval Supplier Search Results**
+                
+                - **Search Area:** {config.radius_miles} miles from {config.base_location}
+                - **Companies Found:** {len(companies)}
+                - **Small Businesses:** {len([c for c in companies if c['size'] == 'Small Business'])}
+                - **High Relevance (Score ≥ 5):** {len([c for c in companies if c['total_score'] >= 5])}
+                
+                **Top 5 Companies by Relevance:**
+                """)
+                
+                top_companies = sorted(companies, key=lambda x: x['total_score'], reverse=True)[:5]
+                for i, company in enumerate(top_companies, 1):
+                    st.markdown(f"{i}. **{company['name']}** - Score: {company['total_score']} - {company['industry']}")
 
 if __name__ == "__main__":
     main()
