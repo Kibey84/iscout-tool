@@ -628,83 +628,175 @@ def main():
         layout="wide"
     )
     
-    # WBI-inspired black and white styling
+    # Exact WBI styling from the HTML
     st.markdown("""
     <style>
+    /* Import Inter font like WBI */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
     /* Main page styling */
     .stApp {
-        background-color: #ffffff;
+        font-family: 'Inter', sans-serif;
+        background-color: #f3f4f6; /* bg-gray-100 */
     }
     
-    /* Header styling - black and white like WBI */
-    .main-header {
-        background: linear-gradient(135deg, #000000 0%, #333333 100%);
-        padding: 2rem;
-        border-radius: 8px;
-        margin-bottom: 2rem;
-        color: white;
+    /* Hide default streamlit elements */
+    .stDeployButton {display: none;}
+    header[data-testid="stHeader"] {display: none;}
+    .stMainBlockContainer {padding-top: 1rem;}
+    
+    /* WBI Header styling - exactly like the HTML */
+    .wbi-header {
+        background-color: #000000;
+        padding: 1.5rem 1rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-bottom: 0;
+    }
+    
+    .wbi-logo-container {
+        background-color: white;
+        border-radius: 0.5rem;
+        padding: 0.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    .wbi-logo {
+        height: 8rem; /* h-32 */
+        font-size: 4rem;
+        color: #1f2937;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .wbi-header h1 {
+        color: white !important;
+        font-size: 1.875rem !important; /* text-3xl */
+        font-weight: 700 !important;
         text-align: center;
+        margin: 0 !important;
     }
     
-    .main-header h1 {
-        color: white !important;
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
+    .wbi-header p {
+        color: #d1d5db !important; /* text-gray-300 */
+        text-align: center;
+        margin-top: 0.5rem !important;
+        margin-bottom: 0 !important;
+        max-width: 32rem;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
     
-    .main-header p {
-        color: #cccccc !important;
-        font-size: 1.1rem;
-        margin: 0;
-        font-weight: 400;
+    /* Black border like WBI */
+    .wbi-border {
+        border-top: 2px solid #000000;
+        margin-bottom: 2rem;
     }
     
-    /* Button styling - black/gray theme */
+    /* Content cards like WBI */
+    .wbi-card {
+        background: white;
+        border-radius: 0.75rem; /* rounded-xl */
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        padding: 1.5rem;
+        border: 1px solid #e5e7eb;
+        margin: 1rem 0;
+    }
+    
+    /* Button styling like WBI */
     .stButton > button {
-        background: linear-gradient(135deg, #000000 0%, #333333 100%) !important;
+        background: #000000 !important;
         color: white !important;
-        border: 1px solid #333333 !important;
-        border-radius: 6px !important;
-        padding: 0.75rem 2rem !important;
-        font-weight: 600 !important;
+        border: none !important;
+        border-radius: 0.5rem !important;
+        padding: 0.75rem 1rem !important;
+        font-weight: 500 !important;
         font-size: 1rem !important;
         transition: all 0.2s ease !important;
         width: 100% !important;
+        font-family: 'Inter', sans-serif !important;
     }
     
     .stButton > button:hover {
-        background: linear-gradient(135deg, #333333 0%, #555555 100%) !important;
-        border-color: #555555 !important;
+        background: #374151 !important;
     }
     
-    /* Logo styling */
-    .logo-container {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 1rem;
+    /* Tab styling like WBI */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+        border-bottom: 1px solid #e5e7eb;
     }
     
-    .logo-text {
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        color: #6b7280;
+        font-weight: 500;
+        border-bottom: 3px solid transparent;
+    }
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #111827;
+        font-weight: 600;
+        border-bottom: 3px solid #f59e0b; /* WBI yellow accent */
+    }
+    
+    /* Metrics styling */
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+    
+    .metric-card {
+        background: white;
+        border-radius: 0.75rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        padding: 1.5rem;
+        border: 1px solid #e5e7eb;
+        text-align: center;
+    }
+    
+    .metric-value {
         font-size: 2rem;
-        font-weight: bold;
-        color: white;
-        margin-left: 0.5rem;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+    }
+    
+    .metric-label {
+        font-size: 0.875rem;
+        color: #6b7280;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0.5rem 0 0 0;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Clean header with WBI-style black/white theme
+    # WBI-style header with logo box
     st.markdown("""
-    <div class="main-header">
-        <div class="logo-container">
-            <div style="font-size: 3rem;">⚓</div>
-            <div class="logo-text">iScout</div>
+    <div class="wbi-header">
+        <div class="wbi-logo-container">
+            <div class="wbi-logo">
+                ⚓ iScout
+            </div>
         </div>
         <h1>Naval Supplier Search</h1>
-        <p>Shaping the Future of Naval Procurement Through Advanced Supplier Intelligence</p>
+        <p>An integrated suite of tools for opportunity discovery, supplier identification, and naval procurement intelligence.</p>
     </div>
+    <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
     
     # Sidebar configuration
@@ -805,17 +897,27 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col2:
-        st.markdown("### ⚡ The Innovation Pipeline for Naval Objectives")
-        st.markdown("The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.")
-        
-        st.markdown("#### 🔍 Discover")
-        st.markdown("Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.")
-        
-        st.markdown("#### ⚙️ Develop") 
-        st.markdown("iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.")
-        
-        st.markdown("#### 🚀 Deliver")
-        st.markdown("With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.")
+        st.markdown("""
+        <div class="wbi-card">
+            <h3 style="color: #111827; margin-top: 0; margin-bottom: 1rem; font-weight: 600;">⚡ The Innovation Pipeline for Naval Objectives</h3>
+            <p style="color: #6b7280; margin-bottom: 1.5rem;">The demand for faster, better naval capabilities is greater than ever. iScout helps you strategize, de-risk, and identify suppliers to meet that demand.</p>
+            
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">🔍 Discover</h4>
+                <p style="color: #6b7280; margin-bottom: 1rem;">Explore suppliers and current market trends that help you make smarter procurement decisions with less friction.</p>
+            </div>
+            
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">⚙️ Develop</h4>
+                <p style="color: #6b7280; margin-bottom: 1rem;">iScout expedites supplier identification by minimizing risk through advanced analytics and naval-specific scoring.</p>
+            </div>
+            
+            <div style="margin: 1rem 0;">
+                <h4 style="color: #111827; margin-bottom: 0.5rem; font-weight: 600;">🚀 Deliver</h4>
+                <p style="color: #6b7280; margin-bottom: 0;">With a focus on efficiency and readiness, iScout positions supplier data to help you execute naval procurement with confidence.</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         if st.button("🔍 Search Companies", type="primary"):
             st.session_state.search_triggered = True
@@ -835,21 +937,33 @@ def main():
         
         st.success(f"Found {len(companies)} relevant companies within {config.radius_miles} miles of {config.base_location}")
         
-        # Simple metrics without complex styling
-        st.markdown("### 📊 Supplier Intelligence Dashboard")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Suppliers", len(companies))
-        with col2:
-            high_relevance = len([c for c in companies if c['total_score'] >= 5])
-            st.metric("High Relevance", high_relevance)
-        with col3:
-            small_businesses = len([c for c in companies if c['size'] == 'Small Business'])
-            st.metric("Small Businesses", small_businesses)
-        with col4:
-            avg_distance = sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
-            st.metric("Avg Distance", f"{avg_distance:.1f} mi")
+        # WBI-style metrics dashboard
+        st.markdown("""
+        <h2 style="color: #111827; font-weight: 700; font-size: 1.5rem; margin-bottom: 1.5rem;">📊 Supplier Intelligence Dashboard</h2>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <p class="metric-value">{}</p>
+                <p class="metric-label">Total Suppliers</p>
+            </div>
+            <div class="metric-card">
+                <p class="metric-value">{}</p>
+                <p class="metric-label">High Relevance</p>
+            </div>
+            <div class="metric-card">
+                <p class="metric-value">{}</p>
+                <p class="metric-label">Small Businesses</p>
+            </div>
+            <div class="metric-card">
+                <p class="metric-value">{:.1f} mi</p>
+                <p class="metric-label">Avg Distance</p>
+            </div>
+        </div>
+        """.format(
+            len(companies),
+            len([c for c in companies if c['total_score'] >= 5]),
+            len([c for c in companies if c['size'] == 'Small Business']),
+            sum(c['distance_miles'] for c in companies) / len(companies) if companies else 0
+        ), unsafe_allow_html=True)
         
         # Tabs for different views with enhanced styling
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Supplier Directory", "🗺️ Geographic Intelligence", "📈 Market Analytics", "📋 Intelligence Export"])
