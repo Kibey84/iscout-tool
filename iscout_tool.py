@@ -1748,21 +1748,19 @@ def main():
         st.info("Please install geopy: `pip install geopy`")
         st.stop()
     
-    # Enhanced WBI header using existing CSS classes
-    st.markdown("""
-    <div class="wbi-header">
-        <div class="wbi-logo-container">
-    """, unsafe_allow_html=True)
+    # Simple WBI header with logo
+    st.markdown('<div class="wbi-header">', unsafe_allow_html=True)
 
-    try:
-        st.image("logos/wbi-logo-horz.png", width=250)
-    except:
-        st.markdown('<div class="wbi-logo">⚓ WBI</div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        try:
+            st.image("logos/wbi-logo-horz.png", width=300)
+        except:
+            st.markdown("### ⚓ WBI")
 
     st.markdown("""
-        </div>
-        <h1>Naval Search Pro</h1>
-        <p>Advanced supplier intelligence and procurement analytics platform for naval operations. Discover, analyze, and connect with defense contractors and maritime suppliers using cutting-edge AI-powered search technology.</p>
+    <h1 style="color: #ffffff; text-align: center; margin-top: 1rem;">Naval Search Pro</h1>
+    <p style="color: #cbd5e0; text-align: center;">Advanced supplier intelligence and procurement analytics platform for naval operations.</p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
