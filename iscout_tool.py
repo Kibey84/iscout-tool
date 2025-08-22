@@ -1403,6 +1403,13 @@ def main():
             del st.session_state.searcher
         if 'search_triggered' in st.session_state:
             del st.session_state.search_triggered
+
+    try:
+        import base64
+        with open("logos/wbi-logo-horz.png", "rb") as logo_file:
+            logo_base64 = base64.b64encode(logo_file.read()).decode()
+    except:
+        logo_base64 = ""  
     
     # Initialize session state
     if 'search_triggered' not in st.session_state:
@@ -1739,10 +1746,8 @@ def main():
     # Enhanced WBI header
     st.markdown("""
     <div class="wbi-header">
-        <div class="wbi-logo-container">
-            <div class="wbi-logo">
-                ⚓ WBI
-            </div>
+        div class="wbi-logo-container">
+            <img src="data:image/png;base64,{}" style="height: 80px; max-width: 300px; object-fit: contain;">
         </div>
         <h1>Naval Search Pro</h1>
         <p>Advanced supplier intelligence and procurement analytics platform for naval operations. Discover, analyze, and connect with defense contractors and maritime suppliers using cutting-edge AI-powered search technology.</p>
@@ -1962,6 +1967,7 @@ def main():
                 st.session_state.companies = companies
                 st.session_state.searcher = searcher
                 st.session_state.search_triggered = False  # Prevent re-execution
+            # Remove st.rerun() - let Streamlit handle the refresh naturally
             st.rerun()  # Refresh to show results
     
     # Display enhanced results
