@@ -691,7 +691,8 @@ class EnhancedCompanySearcher:
             'restaurant', 'food', 'grocery', 'retail', 'bank', 'insurance',
             'real estate', 'gas station', 'convenience store',
             'kitchen', 'bath', 'bathroom', 'cabinet', 'flooring',
-            'furniture', 'appliance', 'hvac', 'plumbing'
+            'furniture', 'appliance', 'hvac', 'plumbing',
+            'home outlet', 'home depot', 'lowes', 'menards', 'outlet store'
         ]
         
         for exclude in exclude_keywords:
@@ -1747,20 +1748,21 @@ def main():
         st.info("Please install geopy: `pip install geopy`")
         st.stop()
     
-    # Enhanced WBI header
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        try:
-            st.image("logos/wbi-logo-horz.png", width=300)
-        except:
-            st.markdown("### ⚓ WBI")
+    # Enhanced WBI header using existing CSS classes
+    st.markdown("""
+    <div class="wbi-header">
+        <div class="wbi-logo-container">
+    """, unsafe_allow_html=True)
+
+    try:
+        st.image("logos/wbi-logo-horz.png", width=250)
+    except:
+        st.markdown('<div class="wbi-logo">⚓ WBI</div>', unsafe_allow_html=True)
 
     st.markdown("""
-    <div style="text-align: center; margin-top: 1rem;">
-        <h1 style="color: #ffffff; font-size: 2.25rem; font-weight: 700;">Naval Search Pro</h1>
-        <p style="color: #cbd5e0; font-size: 1.1rem; max-width: 600px; margin: 0 auto;">
-            Advanced supplier intelligence and procurement analytics platform for naval operations.
-        </p>
+        </div>
+        <h1>Naval Search Pro</h1>
+        <p>Advanced supplier intelligence and procurement analytics platform for naval operations. Discover, analyze, and connect with defense contractors and maritime suppliers using cutting-edge AI-powered search technology.</p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
@@ -1972,12 +1974,15 @@ def main():
     # Execute search when triggered
         if st.session_state.get('search_triggered', False):
             if not st.session_state.get('companies'):
-                with st.spinner("Searching for companies..."):
-                    searcher = EnhancedCompanySearcher(config)
-                    companies = searcher.search_companies()
-                    st.session_state.companies = companies
-                    st.session_state.searcher = searcher
-            st.session_state.search_triggered = False  # Always reset trigger
+                search_container = st.empty()
+                with search_container:
+                    with st.spinner("Searching for companies..."):
+                        searcher = EnhancedCompanySearcher(config)
+                        companies = searcher.search_companies()
+                        st.session_state.companies = companies
+                        st.session_state.searcher = searcher
+                search_container.empty()  # Clear search progress after completion
+            st.session_state.search_triggered = False
     
     # Display enhanced results
     if st.session_state.get('companies'):
@@ -2267,21 +2272,27 @@ def main():
                 with export_col1:
                     st.markdown("### 📊 Data Export Options")
                     
-                    # CSV Export with enhanced data - cleaned format
+                    # Enhanced CSV with better formatting
                     export_df = df[['name', 'location', 'industry', 'size', 'total_score', 
                                     'manufacturing_score', 'robotics_score', 'unmanned_score', 
                                     'workforce_score', 'distance_miles', 'rating', 'website', 
-                                    'phone', 'capabilities']].copy()
+                                    'phone']].copy()
 
-                    export_df.columns = ['Company Name', 'Location', 'Industry', 'Size', 
-                                        'Naval Score', 'Manufacturing', 'Robotics', 'Unmanned', 
-                                        'Workforce', 'Distance (mi)', 'Rating', 'Website', 'Phone', 'Capabilities']
+                    # Clean column names
+                    export_df.columns = ['Company Name', 'Location', 'Industry', 'Company Size', 
+                                        'Naval Relevance Score', 'Manufacturing Score', 'Robotics Score', 
+                                        'Unmanned Systems Score', 'Workforce Training Score', 'Distance (Miles)', 
+                                        'Quality Rating', 'Website', 'Phone Number']
 
-                    # Add search metadata
+                    # Format numeric columns to 1 decimal place
+                    numeric_cols = ['Naval Relevance Score', 'Manufacturing Score', 'Robotics Score', 
+                                    'Unmanned Systems Score', 'Workforce Training Score', 'Distance (Miles)', 'Quality Rating']
+                    for col in numeric_cols:
+                        export_df[col] = export_df[col].round(1)
+
+                    # Add search metadata at the end
                     export_df['Search Location'] = config.base_location
-                    export_df['Search Radius (miles)'] = config.radius_miles
-                    export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    export_df['Capabilities Text'] = export_df['Capabilities'].apply(lambda x: '; '.join(x))
+                    export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d")
 
                     csv_data = export_df.to_csv(index=False)
                     
