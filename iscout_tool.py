@@ -1404,12 +1404,14 @@ def main():
         if 'search_triggered' in st.session_state:
             del st.session_state.search_triggered
 
+    # Load WBI logo
     try:
         import base64
         with open("logos/wbi-logo-horz.png", "rb") as logo_file:
             logo_base64 = base64.b64encode(logo_file.read()).decode()
-    except:
-        logo_base64 = ""  
+    except Exception as e:
+        st.error(f"Logo not found: {e}")
+        logo_base64 = ""  # Fallback if logo not found  
     
     # Initialize session state
     if 'search_triggered' not in st.session_state:
@@ -1959,16 +1961,15 @@ def main():
                 """, unsafe_allow_html=True)
     
     with main_col1:
-        # Display results - fix the search execution
-        if st.session_state.get('search_triggered', False) and not st.session_state.get('companies'):
-            with st.spinner("Searching for companies..."):
-                searcher = EnhancedCompanySearcher(config)
-                companies = searcher.search_companies()
-                st.session_state.companies = companies
-                st.session_state.searcher = searcher
-                st.session_state.search_triggered = False  # Prevent re-execution
-            # Remove st.rerun() - let Streamlit handle the refresh naturally
-            st.rerun()  # Refresh to show results
+    # Execute search when triggered
+        if st.session_state.get('search_triggered', False):
+            if not st.session_state.get('companies'):
+                with st.spinner("Searching for companies..."):
+                    searcher = EnhancedCompanySearcher(config)
+                    companies = searcher.search_companies()
+                    st.session_state.companies = companies
+                    st.session_state.searcher = searcher
+            st.session_state.search_triggered = False  # Always reset trigger
     
     # Display enhanced results
     if st.session_state.get('companies'):
