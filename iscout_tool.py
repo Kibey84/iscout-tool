@@ -689,7 +689,9 @@ class EnhancedCompanySearcher:
             'mobile welding', 'roadside', 'automotive repair', 'auto repair',
             'truck repair', 'trailer repair', 'small engine', 'lawn mower',
             'restaurant', 'food', 'grocery', 'retail', 'bank', 'insurance',
-            'real estate', 'gas station', 'convenience store'
+            'real estate', 'gas station', 'convenience store',
+            'kitchen', 'bath', 'bathroom', 'cabinet', 'flooring',
+            'furniture', 'appliance', 'hvac', 'plumbing'
         ]
         
         for exclude in exclude_keywords:
@@ -1746,13 +1748,19 @@ def main():
         st.stop()
     
     # Enhanced WBI header
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        try:
+            st.image("logos/wbi-logo-horz.png", width=300)
+        except:
+            st.markdown("### ⚓ WBI")
+
     st.markdown("""
-    <div class="wbi-header">
-        div class="wbi-logo-container">
-            <img src="data:image/png;base64,{}" style="height: 80px; max-width: 300px; object-fit: contain;">
-        </div>
-        <h1>Naval Search Pro</h1>
-        <p>Advanced supplier intelligence and procurement analytics platform for naval operations. Discover, analyze, and connect with defense contractors and maritime suppliers using cutting-edge AI-powered search technology.</p>
+    <div style="text-align: center; margin-top: 1rem;">
+        <h1 style="color: #ffffff; font-size: 2.25rem; font-weight: 700;">Naval Search Pro</h1>
+        <p style="color: #cbd5e0; font-size: 1.1rem; max-width: 600px; margin: 0 auto;">
+            Advanced supplier intelligence and procurement analytics platform for naval operations.
+        </p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
@@ -2259,14 +2267,24 @@ def main():
                 with export_col1:
                     st.markdown("### 📊 Data Export Options")
                     
-                    # CSV Export with enhanced data
-                    enhanced_df = df.copy()
-                    enhanced_df['search_location'] = config.base_location
-                    enhanced_df['search_radius_miles'] = config.radius_miles
-                    enhanced_df['search_timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    enhanced_df['capabilities_text'] = enhanced_df['capabilities'].apply(lambda x: '; '.join(x))
+                    # CSV Export with enhanced data - cleaned format
+                    export_df = df[['name', 'location', 'industry', 'size', 'total_score', 
+                                    'manufacturing_score', 'robotics_score', 'unmanned_score', 
+                                    'workforce_score', 'distance_miles', 'rating', 'website', 
+                                    'phone', 'capabilities']].copy()
+
+                    export_df.columns = ['Company Name', 'Location', 'Industry', 'Size', 
+                                        'Naval Score', 'Manufacturing', 'Robotics', 'Unmanned', 
+                                        'Workforce', 'Distance (mi)', 'Rating', 'Website', 'Phone', 'Capabilities']
+
+                    # Add search metadata
+                    export_df['Search Location'] = config.base_location
+                    export_df['Search Radius (miles)'] = config.radius_miles
+                    export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    export_df['Capabilities Text'] = export_df['Capabilities'].apply(lambda x: '; '.join(x))
+
+                    csv_data = export_df.to_csv(index=False)
                     
-                    csv_data = enhanced_df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Enhanced CSV Report",
                         data=csv_data,
