@@ -345,6 +345,34 @@ class EnhancedCompanySearcher:
             'total_score': 0.0
         }
         
+        # Strong naval-specific weights
+        naval_weights = {
+            "navy": 20, "us navy": 25, "navsea": 30, "navair": 25, "onr": 15,
+            "maritime": 15, "marine": 12, "shipbuilding": 25, "shipyard": 25,
+            "dry dock": 18, "submarine": 25, "uuv": 25, "rov": 20, "sonar": 22,
+            "hull": 10, "propulsion": 12, "oceanographic": 14, "bathymetry": 14,
+            "coast guard": 16
+        }
+        naval_score = 0.0
+        for kw, w in naval_weights.items():
+            if kw in combined_text:
+                naval_score += w
+                occ = combined_text.count(kw)
+                if occ > 1:
+                    naval_score += (occ - 1) * w * 0.3
+
+        # Penalize common false positives
+        negatives = [
+            "environmental consulting", "remediation", "abatement",
+            "general contractor", "residential", "home builder",
+        ]
+        neg_penalty = sum(10 for n in negatives if n in combined_text)
+        naval_score = max(naval_score - neg_penalty, 0)
+
+        # Fold naval score into defense & total
+        scores['defense_score'] += naval_score
+        scores['total_score'] += naval_score
+
         # Enhanced keyword scoring with weights
         keyword_weights = {
             'manufacturing': {
@@ -537,7 +565,18 @@ class EnhancedCompanySearcher:
             "drone systems", "ROV systems", "UUV systems"
         ]
         
-        return base_queries
+        return [
+            # Core naval/shipbuilding
+            "shipbuilding companies", "shipyard services", "naval architecture firm",
+            "ship repair yard", "dry dock services", "marine engineering",
+            "marine electronics integration", "sonar systems integrator",
+            "oceanographic equipment", "bathymetry systems", "marine propulsion systems",
+            "UUV manufacturer", "ROV manufacturer", "subsea systems integrator",
+            
+            # Navy ecosystem cues
+            "NAVSEA supplier", "NAVAIR supplier", "US Navy contractor",
+            "coast guard ship repair", "maritime defense contractor",
+        ]
     
     def search_google_places_text(self, query: str) -> List[Dict]:
         """Enhanced Google Places text search"""
@@ -599,32 +638,34 @@ class EnhancedCompanySearcher:
                 if distance > self.config.radius_miles:
                     continue
                 
-                name = place.get('displayName', {}).get('text', 'Unknown')
-                types = place.get('types', [])
-                business_status = place.get('businessStatus', 'OPERATIONAL')
-                
-                # Skip closed businesses
-                if business_status != 'OPERATIONAL':
+                # Build a combined string to filter against
+                combined_for_filter = " ".join([
+                    name or "",
+                    ", ".join(types or []),
+                    place.get('formattedAddress', '') or '',
+                    place.get('websiteUri', '') or ''
+                ])
+
+                # Require naval AND manufacturing relevance (stricter gate)
+                if not (self._is_naval_related(combined_for_filter) and self._is_manufacturing_related(name, types)):
                     continue
-                
-                if self._is_manufacturing_related(name, types):
-                    business_size = self._determine_business_size(name, types, place)
-                    
-                    company = {
-                        'name': name,
-                        'location': place.get('formattedAddress', 'Unknown'),
-                        'industry': ', '.join(types[:3]) if types else 'Unknown',
-                        'description': self._generate_description(name, types, query),
-                        'size': business_size,
-                        'capabilities': self._extract_capabilities_from_name_and_types(name, types),
-                        'lat': place_lat,
-                        'lon': place_lon,
-                        'website': place.get('websiteUri', 'Not available'),
-                        'phone': place.get('nationalPhoneNumber', 'Not available'),
-                        'rating': place.get('rating', 0),
-                        'user_ratings_total': place.get('userRatingCount', 0)
-                    }
-                    companies.append(company)
+
+                business_size = self._determine_business_size(name, types, place)
+                company = {
+                    'name': name,
+                    'location': place.get('formattedAddress', 'Unknown'),
+                    'industry': ', '.join(types[:3]) if types else 'Unknown',
+                    'description': self._generate_description(name, types, query),
+                    'size': business_size,
+                    'capabilities': self._extract_capabilities_from_name_and_types(name, types),
+                    'lat': place_lat,
+                    'lon': place_lon,
+                    'website': place.get('websiteUri', 'Not available'),
+                    'phone': place.get('nationalPhoneNumber', 'Not available'),
+                    'rating': place.get('rating', 0),
+                    'user_ratings_total': place.get('userRatingCount', 0)
+                }
+                companies.append(company)
                     
             except Exception as e:
                 logger.error(f"Error processing place: {e}")
@@ -671,10 +712,16 @@ class EnhancedCompanySearcher:
                 scores = self._score_company_relevance(company)
                 company.update(scores)
                 
+                # Optional strict naval check from UI
+                if st.session_state.get('strict_naval', True):
+                    naval_text = f"{company['name']} {company['industry']} {company['description']} {company.get('website','')}"
+                    if not self._is_naval_related(naval_text):
+                        continue
+
                 # Filter by distance and minimum relevance
                 if distance <= self.config.radius_miles and company['total_score'] >= 1:
                     unique_companies.append(company)
-        
+
         # Sort by relevance score and limit results
         unique_companies.sort(key=lambda x: x['total_score'], reverse=True)
         return unique_companies[:self.config.target_company_count]
@@ -738,6 +785,31 @@ class EnhancedCompanySearcher:
         
         return False
     
+    def _is_naval_related(self, text: str) -> bool:
+        t = text.lower()
+
+    # At least ONE of these must appear
+    required_any = [
+        "naval", "maritime", "marine", "ship", "shipyard", "shipbuilding",
+        "dry dock", "drydock", "submarine", "sub-sea", "subsea", "uuv", "rov",
+        "sonar", "hull", "propulsion", "navsea", "navair", "onr", "us navy",
+        "coast guard", "oceanographic", "bathymetry"
+    ]
+
+    # If ANY of these appear, likely irrelevant for your use
+    hard_negatives = [
+        "general contractor", "home builder", "residential", "roofing",
+        "landscap", "real estate", "property management",
+        "environmental consulting", "remediation", "abatement",
+        "wedding", "restaurant", "catering", "salon", "boutique",
+        "insurance", "bank", "law firm", "chiropractor"
+    ]
+
+    if any(n in t for n in hard_negatives):
+        return False
+
+    return any(k in t for k in required_any)
+
     def _determine_business_size(self, name: str, types: List[str], place_data: Dict) -> str:
         """Enhanced business size determination"""
         name_lower = name.lower()
@@ -1767,7 +1839,9 @@ def main():
 
     # Enhanced sidebar configuration
     st.sidebar.header("🔧 Advanced Search Configuration")
-    
+    strict_naval = st.sidebar.checkbox("Strict Naval Filter (recommended)", value=True)
+    st.session_state.strict_naval = strict_naval
+
     # API Key management
     if not GOOGLE_PLACES_API_KEY:
         st.sidebar.warning("⚠️ No API key detected")
