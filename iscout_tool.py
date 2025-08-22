@@ -1748,19 +1748,23 @@ def main():
         st.info("Please install geopy: `pip install geopy`")
         st.stop()
     
-    # Simple WBI header with logo
-    st.markdown('<div class="wbi-header">', unsafe_allow_html=True)
+    # WBI header with logo in white box
+    st.markdown("""
+    <div class="wbi-header">
+        <div style="display: flex; justify-content: center; margin-bottom: 1.5rem;">
+            <div style="background: white; padding: 1rem 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        try:
-            st.image("logos/wbi-logo-horz.png", width=300)
-        except:
-            st.markdown("### ⚓ WBI")
+    try:
+        st.image("logos/wbi-logo-horz.png", width=280)
+    except:
+        st.markdown('<div style="text-align: center; color: #1a202c; font-weight: bold;">⚓ WBI</div>', unsafe_allow_html=True)
 
     st.markdown("""
-    <h1 style="color: #ffffff; text-align: center; margin-top: 1rem;">Naval Search Pro</h1>
-    <p style="color: #cbd5e0; text-align: center;">Advanced supplier intelligence and procurement analytics platform for naval operations.</p>
+            </div>
+        </div>
+        <h1 style="color: #ffffff; text-align: center; margin: 0;">Naval Search Pro</h1>
+        <p style="color: #cbd5e0; text-align: center; margin-top: 0.75rem;">Advanced supplier intelligence and procurement analytics platform for naval operations.</p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
