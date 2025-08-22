@@ -1061,7 +1061,6 @@ class EnhancedVisualization:
                     ticktext=["Low", "Medium", "High", "Very High", "Critical"]
                 ),
                 opacity=0.8,
-                line=dict(width=1, color='white')
             ),
             text=hover_text,
             name='Companies',
@@ -1780,7 +1779,7 @@ def main():
     
     if location_option == "🎯 Preset Naval Locations":
         preset_locations = {
-            "South Bend, Indiana (WBI Headquarters)": "South Bend, Indiana",
+            "South Bend, Indiana": "South Bend, Indiana",
             "Norfolk, Virginia (Naval Station Norfolk)": "Norfolk, Virginia",
             "San Diego, California (Naval Base San Diego)": "San Diego, California", 
             "Pearl Harbor, Hawaii (Joint Base Pearl Harbor)": "Pearl Harbor, Hawaii",
@@ -1916,27 +1915,11 @@ def main():
     main_col1, main_col2 = st.columns([3, 1])
     
     with main_col2:
-        st.markdown("""
-        <div class="wbi-card">
-            <h3>⚡ Naval Procurement Intelligence</h3>
-            <p>Advanced supplier discovery and market intelligence for naval operations. Streamline procurement with AI-powered supplier identification and risk assessment.</p>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>🔍 Discover</h4>
-                <p>Intelligent supplier discovery using advanced natural language processing and geographic analysis for comprehensive market coverage.</p>
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>📊 Analyze</h4>
-                <p>Multi-dimensional scoring system evaluating naval relevance, capability alignment, and strategic partnership potential.</p>
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>🚀 Execute</h4>
-                <p>Actionable intelligence for procurement decisions with comprehensive supplier profiles and risk assessments.</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("### ⚡ Naval Procurement Intelligence")
+        st.markdown("Advanced supplier discovery and market intelligence for naval operations.")
+        st.markdown("**🔍 Discover:** Intelligent supplier discovery using advanced natural language processing.")
+        st.markdown("**📊 Analyze:** Multi-dimensional scoring system evaluating naval relevance and capability alignment.")
+        st.markdown("**🚀 Execute:** Actionable intelligence for procurement decisions with comprehensive supplier profiles.")
         
         # Performance monitoring
         if st.session_state.get('companies'):
