@@ -1449,18 +1449,19 @@ def main():
     }
     
     .wbi-logo-container {
-        background: linear-gradient(135deg, #ffffff 0%, #f7fafc 100%);
-        border-radius: 1rem;
-        padding: 1rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 1rem 2rem;
+        margin: 0 auto 1.5rem auto;   /* centers the box */
         display: flex;
         justify-content: center;
         align-items: center;
-        width: fit-content;
-        margin-left: auto;
-        margin-right: auto;
-        border: 2px solid #e2e8f0;
+        width: fit-content;           /* shrink to logo size */
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .wbi-logo-container img {
+        max-height: 80px;             /* keeps consistent height */
+        width: auto;
     }
     
     .wbi-logo {
@@ -1749,22 +1750,20 @@ def main():
         st.stop()
     
     # WBI header with logo in white box
-    st.markdown("""
-    <div class="wbi-header">
-        <div style="display: flex; justify-content: center; margin-bottom: 1.5rem;">
-            <div style="background: white; padding: 1rem 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="wbi-header">', unsafe_allow_html=True)
 
+    st.markdown('<div class="wbi-logo-container">', unsafe_allow_html=True)
     try:
-        st.image("logos/wbi-logo-horz.png", width=280)
+        st.image("logos/wbi-logo-horz.png")
     except:
         st.markdown('<div style="text-align: center; color: #1a202c; font-weight: bold;">⚓ WBI</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("""
-            </div>
-        </div>
         <h1 style="color: #ffffff; text-align: center; margin: 0;">Naval Search Pro</h1>
-        <p style="color: #cbd5e0; text-align: center; margin-top: 0.75rem;">Advanced supplier intelligence and procurement analytics platform for naval operations.</p>
+        <p style="color: #cbd5e0; text-align: center; margin-top: 0.75rem;">
+            Advanced supplier intelligence and procurement analytics platform for naval operations.
+        </p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
