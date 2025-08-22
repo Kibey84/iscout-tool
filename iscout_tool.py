@@ -1394,6 +1394,15 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+
+    def reset_search_state():
+        """Clear previous search results"""
+        if 'companies' in st.session_state:
+            del st.session_state.companies
+        if 'searcher' in st.session_state:
+            del st.session_state.searcher
+        if 'search_triggered' in st.session_state:
+            del st.session_state.search_triggered
     
     # Initialize session state
     if 'search_triggered' not in st.session_state:
@@ -1902,13 +1911,13 @@ def main():
     search_col1, search_col2 = st.sidebar.columns([3, 1])
     with search_col1:
         if st.button("🔍 Execute Naval Search", type="primary"):
+            reset_search_state()  # Clear previous results
             st.session_state.search_triggered = True
             st.session_state.last_search_config = config
     
     with search_col2:
         if st.button("🔄", help="Reset Search"):
-            st.session_state.search_triggered = False
-            st.session_state.companies = []
+            reset_search_state()
             st.rerun()
     
     # Main content area with enhanced layout
@@ -1945,29 +1954,15 @@ def main():
                 """, unsafe_allow_html=True)
     
     with main_col1:
-        # Execute search when triggered
-        if st.session_state.get('search_triggered', False):
-            search_start_time = time.time()
-            
-            with st.spinner("🔍 Executing advanced naval supplier search..."):
-                try:
-                    searcher = EnhancedCompanySearcher(config)
-                    companies = searcher.search_companies()
-                    
-                    search_duration = time.time() - search_start_time
-                    
-                    st.session_state.companies = companies
-                    st.session_state.searcher = searcher
-                    st.session_state.search_duration = search_duration
-                    
-                    if companies:
-                        st.success(f"✅ Found {len(companies)} naval suppliers in {search_duration:.1f}s")
-                    else:
-                        st.warning("⚠️ No companies found matching criteria")
-                        
-                except Exception as e:
-                    st.error(f"❌ Search error: {str(e)}")
-                    logger.error(f"Search execution error: {e}")
+        # Display results - fix the search execution
+        if st.session_state.get('search_triggered', False) and not st.session_state.get('companies'):
+            with st.spinner("Searching for companies..."):
+                searcher = EnhancedCompanySearcher(config)
+                companies = searcher.search_companies()
+                st.session_state.companies = companies
+                st.session_state.searcher = searcher
+                st.session_state.search_triggered = False  # Prevent re-execution
+            st.rerun()  # Refresh to show results
     
     # Display enhanced results
     if st.session_state.get('companies'):
@@ -2037,6 +2032,14 @@ def main():
                     with metric_col4:
                         st.metric("Reviews", company['user_ratings_total'])
                     
+                    # In the company display section, add this debug info:
+                    st.markdown("**🔍 Score Breakdown Debug:**")
+                    st.write(f"Manufacturing: {company['manufacturing_score']}")
+                    st.write(f"Robotics: {company['robotics_score']}")
+                    st.write(f"Unmanned: {company['unmanned_score']}")
+                    st.write(f"Workforce: {company['workforce_score']}")
+                    st.write(f"**Total: {company['total_score']}** (Should equal sum above)")
+
                     # Company details
                     detail_col1, detail_col2 = st.columns(2)
                     with detail_col1:
