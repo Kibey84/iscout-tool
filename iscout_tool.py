@@ -1459,9 +1459,11 @@ def main():
         width: fit-content;           /* shrink to logo size */
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-    .wbi-logo-container img {
-        max-height: 80px;             /* keeps consistent height */
-        width: auto;
+    .wbi-logo-img{
+        display:block;
+        max-height:80px;          /* ⬅️ prevents huge logo */
+        max-width:320px;
+        height:auto; width:auto;
     }
     
     .wbi-logo {
@@ -1749,19 +1751,14 @@ def main():
         st.info("Please install geopy: `pip install geopy`")
         st.stop()
     
-    # WBI header with logo in white box
-    st.markdown('<div class="wbi-header">', unsafe_allow_html=True)
-
-    st.markdown('<div class="wbi-logo-container">', unsafe_allow_html=True)
-    try:
-        st.image("logos/wbi-logo-horz.png")
-    except:
-        st.markdown('<div style="text-align: center; color: #1a202c; font-weight: bold;">⚓ WBI</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown("""
-        <h1 style="color: #ffffff; text-align: center; margin: 0;">Naval Search Pro</h1>
-        <p style="color: #cbd5e0; text-align: center; margin-top: 0.75rem;">
+    # WBI header with logo in white box (no st.image here)
+    st.markdown(f"""
+    <div class="wbi-header">
+        <div class="wbi-logo-container">
+            {'<img class="wbi-logo-img" src="data:image/png;base64,' + logo_base64 + '" alt="WBI Logo"/>' if logo_base64 else '<div style="color:#1a202c;font-weight:800;">⚓ WBI</div>'}
+        </div>
+        <h1 style="color:#ffffff;text-align:center;margin:0;">Naval Search Pro</h1>
+        <p style="color:#cbd5e0;text-align:center;margin-top:.75rem;">
             Advanced supplier intelligence and procurement analytics platform for naval operations.
         </p>
     </div>
