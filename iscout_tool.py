@@ -468,17 +468,34 @@ class EnhancedCompanySearcher:
             if exclude in combined_text:
                 scores['total_score'] = max(0, scores['total_score'] - 20)  # Heavy penalty
         
+        
         # Calculate total score with weights
         scores['total_score'] = (
-            scores['manufacturing_score'] * 1.0 +
-            scores['robotics_score'] * 0.8 +
-            scores['unmanned_score'] * 0.9 +
-            scores['workforce_score'] * 0.7 +
-            scores['defense_score'] * 1.2 +
-            scores['size_bonus'] +
-            scores['quality_bonus']
+        scores['manufacturing_score'] * 1.0 +
+        scores['robotics_score'] * 0.8 +
+        scores['unmanned_score'] * 0.9 +
+        scores['workforce_score'] * 0.7 +
+        scores['defense_score'] * 1.2 +
+        scores['size_bonus'] +
+        scores['quality_bonus']
         )
-        
+
+        # HEAVY PENALTIES for service companies that sneak through
+        service_penalties = [
+            ('restoration', -50), ('remodeling', -50), ('construction', -30),
+            ('facility services', -40), ('general contractor', -30),
+            ('environmental', -25), ('consulting', -20), ('architecture', -25)
+        ]
+
+        for penalty_word, penalty_points in service_penalties:
+            if penalty_word in combined_text:
+                scores['total_score'] += penalty_points  # Negative points
+
+        # Ensure no service company gets above 5 points
+        service_company_indicators = ['restoration', 'remodeling', 'construction', 'facility services']
+        if any(indicator in combined_text for indicator in service_company_indicators):
+            scores['total_score'] = min(scores['total_score'], 2.0)
+
         return scores
     
     def search_companies_sync(self) -> List[Dict]:
@@ -725,63 +742,54 @@ class EnhancedCompanySearcher:
         return unique_companies[:self.config.target_company_count]
     
     def _is_manufacturing_related(self, name: str, types: List[str]) -> bool:
-        """Enhanced manufacturing relation detection"""
+        """STRICT manufacturing/naval filter - exclude service companies"""
         name_lower = name.lower()
         types_str = ' '.join(types).lower()
-        
-        # Strict exclusions
-        exclude_keywords = [
-            'mobile welding', 'roadside', 'automotive repair', 'auto repair',
-            'truck repair', 'trailer repair', 'small engine', 'lawn mower',
-            'restaurant', 'food', 'grocery', 'retail', 'bank', 'insurance',
-            'real estate', 'gas station', 'convenience store',
-            'kitchen', 'bath', 'bathroom', 'cabinet', 'flooring',
-            'furniture', 'appliance', 'hvac', 'plumbing',
-            'home outlet', 'home depot', 'lowes', 'menards', 'outlet store'
+        combined = f"{name_lower} {types_str}"
+    
+        # IMMEDIATE REJECT - these should NEVER appear
+        hard_exclude = [
+            'restoration', 'remodeling', 'construction', 'home', 'residential',
+            'facility services', 'cleaning', 'maintenance', 'janitorial',
+            'environmental services', 'consulting', 'architecture', 'design',
+            'real estate', 'property', 'landscaping', 'roofing', 'flooring',
+            'restaurant', 'food', 'retail', 'bank', 'insurance', 'legal'
         ]
-        
-        for exclude in exclude_keywords:
-            if exclude in name_lower:
+    
+        for exclude in hard_exclude:
+            if exclude in combined:
                 return False
+    
+        # MUST have manufacturing/naval indicators
+        required_indicators = [
+            # Actual manufacturing
+            'manufacturing', 'machining', 'fabrication', 'welding', 'casting',
+            'forging', 'cnc', 'precision', 'metal', 'steel', 'aluminum',
         
-        # Manufacturing indicators
-        manufacturing_indicators = [
-            'manufacturing', 'fabrication', 'machining', 'industrial',
-            'aerospace', 'defense', 'precision', 'cnc', 'automation',
-            'robotics', 'engineering', 'systems', 'technologies',
-            'corporation', 'industries', 'solutions', 'shipyard',
-            'marine engineering', 'naval', 'maritime'
+            # Naval/maritime manufacturing
+            'shipyard', 'shipbuilding', 'marine', 'naval', 'maritime',
+            'submarine', 'vessel', 'boat', 'ship',
+        
+            # Defense manufacturing
+            'aerospace', 'defense contractor', 'military contractor',
+        
+            # Technology manufacturing
+            'robotics', 'automation', 'electronics', 'systems integration',
+        
+            # Training (naval specific)
+            'maritime academy', 'naval training', 'shipyard training'
         ]
-        
-        # Training and workforce indicators
-        training_indicators = [
-            'training', 'academy', 'institute', 'education', 'certification',
-            'apprenticeship', 'workforce', 'maritime', 'naval', 'shipyard',
-            'technical college', 'vocational', 'skills center', 'simulation'
+    
+        # Must have at least one manufacturing indicator
+        has_manufacturing = any(indicator in combined for indicator in required_indicators)
+    
+        # Business types that indicate manufacturing
+        manufacturing_types = [
+            'manufacturer', 'machine_shop', 'factory', 'foundry', 'mill'
         ]
-        
-        # Business type indicators
-        business_types = [
-            'manufacturer', 'contractor', 'engineering', 'technology',
-            'industrial', 'aerospace', 'defense', 'school', 'university',
-            'college', 'institute', 'academy', 'training_center'
-        ]
-        
-        # Check all indicators
-        all_indicators = manufacturing_indicators + training_indicators
-        for indicator in all_indicators:
-            if indicator in name_lower:
-                return True
-        
-        for btype in business_types:
-            if btype in types_str:
-                return True
-        
-        # Special cases
-        if 'welding' in name_lower and any(word in name_lower for word in ['fabrication', 'manufacturing', 'industrial']):
-            return True
-        
-        return False
+        has_mfg_type = any(mtype in types_str for mtype in manufacturing_types)
+    
+        return has_manufacturing or has_mfg_type
     
     def _is_naval_related(self, text: str) -> bool:
         """Lenient filter - mainly exclude obvious non-manufacturing businesses."""
