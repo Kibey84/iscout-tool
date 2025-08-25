@@ -1575,6 +1575,55 @@ The supplier base demonstrates strong capabilities in the following areas:
     
     return report
 
+def generate_pdf_report(companies: List[Dict], config: SearchConfig) -> str:
+    """Generate HTML version that can be printed to PDF"""
+    report_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .section {{ margin: 20px 0; }}
+            .company {{ margin: 15px 0; padding: 10px; border-left: 3px solid #2563eb; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>WBI Naval Search - Executive Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+            <p>Location: {config.base_location} | Radius: {config.radius_miles} miles</p>
+        </div>
+        
+        <div class="section">
+            <h2>Executive Summary</h2>
+            <p>Found {len(companies)} validated naval suppliers</p>
+        </div>
+        
+        <div class="section">
+            <h2>Top Suppliers</h2>
+    """
+    
+    for i, company in enumerate(companies[:10], 1):
+        report_html += f"""
+        <div class="company">
+            <h3>{i}. {company['name']}</h3>
+            <p><strong>Naval Score:</strong> {company.get('naval_score', 0)}</p>
+            <p><strong>Location:</strong> {company['location']}</p>
+            <p><strong>Phone:</strong> {company['phone']}</p>
+        </div>
+        """
+    
+    report_html += """
+        </div>
+    </body>
+    </html>
+    """
+    
+    return report_html
+    
 def main():
     """Enhanced main application with advanced features"""
     st.set_page_config(
@@ -2472,7 +2521,7 @@ def main():
                     st.markdown("### 📊 Data Export Options")
                     
                     # Enhanced CSV with better formatting
-                    export_df = df[['name', 'location', 'industry', 'size', 'total_score', 
+                    export_df = df[['name', 'location', 'industry', 'size', 'naval_score', 
                                     'manufacturing_score', 'robotics_score', 'unmanned_score', 
                                     'workforce_score', 'distance_miles', 'rating', 'website', 
                                     'phone']].copy()
@@ -2504,13 +2553,14 @@ def main():
                     )
                     
                     # Executive summary export
-                    exec_report = generate_executive_report(companies, config)
+                    # HTML Report (can be printed to PDF)
+                    html_report = generate_pdf_report(companies, config)
                     st.download_button(
-                        label="📋 Download Executive Report",
-                        data=exec_report,
-                        file_name=f"wbi_executive_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                        mime="text/markdown",
-                        help="Executive-level strategic analysis and recommendations"
+                        label="📋 Download HTML Report",
+                        data=html_report,
+                        file_name=f"wbi_executive_report_{datetime.now().strftime('%Y%m%d_%H%M')}.html",
+                        mime="text/html",
+                        help="Download HTML report (use browser Print to PDF)"
                     )
                 
                 with export_col2:
