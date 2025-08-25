@@ -186,7 +186,71 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error loading search history: {e}")
             return []
-
+        
+class AINavalAgent:
+    """AI agent for evaluating naval supplier relevance"""
+    
+    @staticmethod
+    def evaluate_company(company_data: Dict) -> Dict:
+        """AI evaluation of company naval relevance"""
+        
+        name = company_data.get('name', '').lower()
+        industry = company_data.get('industry', '').lower() 
+        description = company_data.get('description', '').lower()
+        types = company_data.get('types', [])
+        
+        combined = f"{name} {industry} {description} {' '.join(types)}"
+        
+        evaluation = {
+            'is_relevant': False,
+            'naval_score': 0,
+            'rejection_reason': None
+        }
+        
+        # IMMEDIATE DISQUALIFIERS - Government/Military Offices
+        government_disqualifiers = [
+            'recruiting', 'recruitment', 'marine corps', 'army', 'air force',
+            'reserve center', 'military office', 'government office', 
+            'administrative office', 'headquarters', 'command center'
+        ]
+        
+        for disqualifier in government_disqualifiers:
+            if disqualifier in combined:
+                evaluation['rejection_reason'] = f"Government office: {disqualifier}"
+                return evaluation
+        
+        # SERVICE COMPANY DISQUALIFIERS
+        service_disqualifiers = [
+            'general contractor', 'construction company', 'remodeling',
+            'restoration', 'facility services', 'cleaning services',
+            'consulting firm', 'real estate', 'insurance'
+        ]
+        
+        for disqualifier in service_disqualifiers:
+            if disqualifier in combined:
+                evaluation['rejection_reason'] = f"Service company: {disqualifier}"
+                return evaluation
+        
+        # MANUFACTURING INDICATORS (must have at least one)
+        manufacturing_indicators = [
+            'machining', 'fabrication', 'welding', 'manufacturing',
+            'shipyard', 'shipbuilding', 'marine engineering', 'naval systems',
+            'aerospace', 'defense manufacturing', 'robotics', 'automation'
+        ]
+        
+        score = 0
+        for indicator in manufacturing_indicators:
+            if indicator in combined:
+                score += 10
+        
+        if score >= 10:  # At least one manufacturing indicator
+            evaluation['is_relevant'] = True
+            evaluation['naval_score'] = min(100, score)
+        else:
+            evaluation['rejection_reason'] = "No manufacturing capability detected"
+        
+        return evaluation
+    
 # Enhanced Configuration
 @dataclass
 class SearchConfig:
@@ -624,7 +688,7 @@ class EnhancedCompanySearcher:
             # Specific manufacturing services
             "CNC machining services", "precision machining", "metal fabrication shop",
             "custom manufacturing", "contract manufacturing", "machine shop",
-            "welding fabrication", "sheet metal fabrication", "casting foundry",
+            "welding fabrication", "sheet metal fabrication", 
         
             # Naval/maritime manufacturing
             "shipbuilding company", "marine engineering", "naval architecture",
@@ -633,15 +697,14 @@ class EnhancedCompanySearcher:
         
             # Defense manufacturing (not offices)
             "defense contractor manufacturing", "aerospace manufacturing",
-            "military equipment manufacturer", "armament manufacturer",
+            "military equipment manufacturer",
         
             # Technology manufacturing
             "robotics manufacturer", "automation systems", "control systems manufacturer",
             "electronics manufacturing", "sensor manufacturer",
         
             # Training facilities (not recruiting)
-            "maritime training facility", "welding school", "technical training institute",
-            "apprenticeship program", "industrial training center"
+            "maritime training facility", "welding school", "technical training institute"
         ]
     
     def search_google_places_text(self, query: str) -> List[Dict]:
@@ -773,22 +836,28 @@ class EnhancedCompanySearcher:
             if key not in seen:
                 seen.add(key)
                 
-                # Add distance and relevance scoring
+                # Add distance calculation
                 distance = self._calculate_distance(company['lat'], company['lon'])
                 company['distance_miles'] = distance
-                
-                # Add relevance scoring
+
+                # AI VALIDATION - this is the key change
+                ai_agent = AINavalAgent()
+                ai_eval = ai_agent.evaluate_company(company)
+
+                # Only proceed if AI approves the company
+                if not ai_eval['is_relevant']:
+                    continue  # Skip this company entirely
+
+                # Add AI evaluation results
+                company['naval_score'] = ai_eval['naval_score']
+                company['ai_approved'] = True
+
+                # Traditional scoring (but now only for AI-approved companies)
                 scores = self._score_company_relevance(company)
                 company.update(scores)
-                
-                # Optional strict naval check from UI
-                if st.session_state.get('strict_naval', True):
-                    naval_text = f"{company['name']} {company['industry']} {company['description']} {company.get('website','')}"
-                    if not self._is_naval_related(naval_text):
-                        continue
 
                 # Filter by distance and minimum relevance
-                if distance <= self.config.radius_miles and company['total_score'] >= 1:
+                if distance <= self.config.radius_miles and company['naval_score'] >= 10:
                     unique_companies.append(company)
 
         # Sort by relevance score and limit results
@@ -807,7 +876,10 @@ class EnhancedCompanySearcher:
             'facility services', 'cleaning', 'maintenance', 'janitorial',
             'environmental services', 'consulting', 'architecture', 'design',
             'real estate', 'property', 'landscaping', 'roofing', 'flooring',
-            'restaurant', 'food', 'retail', 'bank', 'insurance', 'legal'
+            'restaurant', 'food', 'retail', 'bank', 'insurance', 'legal', 
+            'marine corps', 'recruiting', 'recruitment', 'reserve center',
+            'military office', 'government office', 'administrative office',
+            'headquarters', 'command center', 'base services'
         ]
     
         for exclude in hard_exclude:
@@ -1150,99 +1222,63 @@ class EnhancedVisualization:
     
     @staticmethod
     def create_advanced_company_map(companies: List[Dict], base_coords: Tuple[float, float]) -> Optional[go.Figure]:
-        """Create advanced interactive map with clustering and filters"""
+        """Create map with proper coordinate validation"""
         if not companies:
             return None
-        
+    
+        # Create DataFrame and validate coordinates
         df = pd.DataFrame(companies)
-        
+    
+        # Remove rows with invalid coordinates
+        df = df.dropna(subset=['lat', 'lon'])
+        df = df[(df['lat'] != 0) & (df['lon'] != 0)]
+        df = df[(df['lat'].between(-90, 90)) & (df['lon'].between(-180, 180))]
+    
+        if df.empty:
+            st.warning("No valid coordinates found for mapping")
+            return None
+    
         fig = go.Figure()
-        
-        # Add base location with enhanced styling
+    
+        # Add base location
         fig.add_trace(go.Scattermapbox(
             lat=[base_coords[0]],
             lon=[base_coords[1]],
             mode='markers',
-            marker=dict(
-                size=25,
-                color='red',
-                symbol='star',
-                opacity=0.9
-            ),
-            text=['🎯 Search Center'],
-            name='Search Center',
-            hovertemplate='<b>Search Center</b><br>%{text}<extra></extra>'
+            marker=dict(size=20, color='red', symbol='circle'),
+            text=['Search Center'],
+            name='Base Location'
         ))
-        
-        # Color scale based on company scores
-        colors = df['total_score']
-        sizes = np.where(df['total_score'] > 10, 15, 
-                np.where(df['total_score'] > 5, 12, 8))
-        
-        df_clean = df.dropna(subset=['lat', 'lon'])
-        df_clean = df_clean[(df_clean['lat'] != 0) & (df_clean['lon'] != 0)]
-
-        if df_clean.empty:
-            return None
-
-        # Add companies with enhanced hover information
-        hover_text = []
-        for _, row in df_clean.iterrows():
-            hover_text.append(
-                f"<b>{row['name']}</b><br>"
-                f"📊 Score: {row['total_score']:.1f}<br>"
-                f"📍 Distance: {row['distance_miles']:.1f} mi<br>"
-                f"🏢 Size: {row['size']}<br>"
-                f"⭐ Rating: {row['rating']:.1f} ({row['user_ratings_total']} reviews)<br>"
-                f"🔧 Capabilities: {', '.join(row['capabilities'][:3])}"
-            )
-        
+    
+        # Add companies with validated coordinates
         fig.add_trace(go.Scattermapbox(
-            lat=df['lat'],
-            lon=df['lon'],
+            lat=df['lat'].tolist(),
+            lon=df['lon'].tolist(),
             mode='markers',
             marker=dict(
-                size=sizes,
-                color=colors,
+                size=10,
+                color=df['naval_score'].tolist(),
                 colorscale='Viridis',
                 showscale=True,
-                colorbar=dict(
-                    title="Naval Relevance Score",
-                    titleside="top",
-                    tickmode="array",
-                    tickvals=[0, 5, 10, 15, 20],
-                    ticktext=["Low", "Medium", "High", "Very High", "Critical"]
-                ),
-                opacity=0.8,
+                colorbar=dict(title="Naval Score")
             ),
-            text=hover_text,
-            name='Companies',
-            hovertemplate='%{text}<extra></extra>'
+            text=[f"{row['name']}<br>Score: {row['naval_score']}<br>Distance: {row['distance_miles']:.1f} mi" 
+                for _, row in df.iterrows()],
+            name='Companies'
         ))
-        
+    
         fig.update_layout(
             mapbox=dict(
                 style='open-street-map',
                 center=dict(lat=base_coords[0], lon=base_coords[1]),
                 zoom=8
             ),
-            height=700,
-            title={
-                'text': "🗺️ Naval Supplier Geographic Intelligence Dashboard",
-                'x': 0.5,
-                'font': {'size': 18, 'color': '#1f2937'}
-            },
-            showlegend=True,
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01,
-                bgcolor="rgba(255,255,255,0.8)"
-            )
+            height=600,
+            title="Naval Supplier Geographic Distribution"
         )
-        
+    
         return fig
+    
     @staticmethod
     def create_comprehensive_analytics_dashboard(companies: List[Dict]) -> List[go.Figure]:
         """Create comprehensive analytics dashboard"""
@@ -2121,18 +2157,31 @@ def main():
                 """, unsafe_allow_html=True)
     
     with main_col1:
-    # Execute search when triggered
+    # Execute search when triggered - FIXED VERSION
         if st.session_state.get('search_triggered', False):
             if not st.session_state.get('companies'):
-                search_container = st.empty()
-                with search_container:
-                    with st.spinner("Searching for companies..."):
+                try:
+                    with st.spinner("AI agent searching and validating companies..."):
                         searcher = EnhancedCompanySearcher(config)
                         companies = searcher.search_companies()
                         st.session_state.companies = companies
                         st.session_state.searcher = searcher
-                search_container.empty()  # Clear search progress after completion
-            st.session_state.search_triggered = False
+                
+                    # Mark search as completed
+                    st.session_state.search_triggered = False
+                
+                    # Show success message
+                    if companies:
+                        st.success(f"Found {len(companies)} validated naval suppliers")
+                    else:
+                        st.warning("No relevant suppliers found. Try a different location or radius.")
+                    
+                except Exception as e:
+                    st.error(f"Search error: {str(e)}")
+                    st.session_state.search_triggered = False
+            else:
+                # Search already completed, just reset the trigger
+                st.session_state.search_triggered = False
     
     # Display enhanced results
     if st.session_state.get('companies'):
