@@ -784,29 +784,41 @@ class EnhancedCompanySearcher:
         return False
     
     def _is_naval_related(self, text: str) -> bool:
-        """Hard filter for naval/maritime relevance."""
+        """Lenient filter - mainly exclude obvious non-manufacturing businesses."""
         t = (text or "").lower()
 
         # Hard negatives – immediate reject
         hard_negatives = [
-            "general contractor", "home builder", "residential", "roofing",
-            "landscap", "real estate", "property management",
-            "environmental consulting", "remediation", "abatement",
-            "wedding", "restaurant", "catering", "salon", "boutique",
-            "insurance", "bank", "law firm", "chiropractor"
+            "restaurant", "food", "catering", "salon", "boutique",
+            "insurance", "bank", "law firm", "chiropractor",
+            "real estate", "property management", "wedding",
+            "home depot", "lowes", "menards", "outlet store",
+            "kitchen", "bathroom", "flooring", "furniture"
         ]
         if any(n in t for n in hard_negatives):
             return False
 
-        # Require at least one strong naval/maritime signal
-        required_any = [
-            "naval", "us navy", "navy", "navsea", "navair", "onr",
-            "maritime", "marine", "ship", "shipyard", "shipbuilding",
-            "dry dock", "drydock", "submarine", "sub-sea", "subsea",
-            "uuv", "rov", "sonar", "hull", "propulsion",
-            "oceanographic", "bathymetry", "coast guard"
+        # Much broader acceptance - manufacturing, engineering, defense, or training
+        accept_signals = [
+            # Naval/maritime (strongest)
+            "naval", "navy", "maritime", "marine", "ship", "shipyard", 
+            "submarine", "sonar", "oceanographic", "coast guard",
+        
+            # Manufacturing & engineering (broad)
+            "manufacturing", "fabrication", "machining", "engineering", 
+            "precision", "cnc", "welding", "assembly", "industrial",
+        
+            # Defense & aerospace
+            "defense", "aerospace", "military", "contractor",
+        
+            # Technology & automation  
+            "automation", "robotics", "systems", "technologies",
+        
+            # Training & education
+            "training", "academy", "institute", "certification"
         ]
-        return any(k in t for k in required_any)
+    
+        return any(signal in t for signal in accept_signals)
 
     def _determine_business_size(self, name: str, types: List[str], place_data: Dict) -> str:
         """Enhanced business size determination"""
@@ -1105,9 +1117,15 @@ class EnhancedVisualization:
         sizes = np.where(df['total_score'] > 10, 15, 
                 np.where(df['total_score'] > 5, 12, 8))
         
+        df_clean = df.dropna(subset=['lat', 'lon'])
+        df_clean = df_clean[(df_clean['lat'] != 0) & (df_clean['lon'] != 0)]
+
+        if df_clean.empty:
+            return None
+
         # Add companies with enhanced hover information
         hover_text = []
-        for _, row in df.iterrows():
+        for _, row in df_clean.iterrows():
             hover_text.append(
                 f"<b>{row['name']}</b><br>"
                 f"📊 Score: {row['total_score']:.1f}<br>"
