@@ -5,7 +5,7 @@ import json
 import time
 import os
 import logging
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, Any
 import re
 from dataclasses import dataclass, field
 import plotly.express as px
@@ -252,6 +252,10 @@ class SearchConfig:
 class EnhancedCompanySearcher:
     """Enhanced company searcher with advanced features"""
     
+    def search_companies(self) -> List[Dict]:
+        """Compatibility wrapper for callers expecting `search_companies`."""
+        return self.search_companies_sync()
+
     def __init__(self, config: SearchConfig):
         self.config = config
         self.config.validate()
@@ -477,15 +481,6 @@ class EnhancedCompanySearcher:
         
         return scores
     
-    def search_companies(self) -> List[Dict]:
-        """Main search function with enhanced error handling"""
-        try:
-            return self.search_companies_sync()
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            st.error(f"Search error: {e}")
-            return self.generate_enhanced_sample_companies()
-    
     def search_companies_sync(self) -> List[Dict]:
         """Synchronous company search"""
         api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
@@ -572,7 +567,7 @@ class EnhancedCompanySearcher:
             "marine electronics integration", "sonar systems integrator",
             "oceanographic equipment", "bathymetry systems", "marine propulsion systems",
             "UUV manufacturer", "ROV manufacturer", "subsea systems integrator",
-            
+
             # Navy ecosystem cues
             "NAVSEA supplier", "NAVAIR supplier", "US Navy contractor",
             "coast guard ship repair", "maritime defense contractor",
@@ -629,19 +624,21 @@ class EnhancedCompanySearcher:
             try:
                 place_lat = place.get('location', {}).get('latitude', 0)
                 place_lon = place.get('location', {}).get('longitude', 0)
-                
                 if not place_lat or not place_lon:
                     continue
-                
+
                 distance = self._calculate_distance(place_lat, place_lon)
-                
                 if distance > self.config.radius_miles:
                     continue
-                
+
+                # ✅ define these FIRST
+                name = place.get('displayName', {}).get('text', 'Unknown')
+                types = place.get('types', []) or []
+
                 # Build a combined string to filter against
                 combined_for_filter = " ".join([
                     name or "",
-                    ", ".join(types or []),
+                    ", ".join(types),
                     place.get('formattedAddress', '') or '',
                     place.get('websiteUri', '') or ''
                 ])
@@ -651,6 +648,7 @@ class EnhancedCompanySearcher:
                     continue
 
                 business_size = self._determine_business_size(name, types, place)
+
                 company = {
                     'name': name,
                     'location': place.get('formattedAddress', 'Unknown'),
@@ -666,7 +664,7 @@ class EnhancedCompanySearcher:
                     'user_ratings_total': place.get('userRatingCount', 0)
                 }
                 companies.append(company)
-                    
+
             except Exception as e:
                 logger.error(f"Error processing place: {e}")
                 continue
@@ -786,29 +784,29 @@ class EnhancedCompanySearcher:
         return False
     
     def _is_naval_related(self, text: str) -> bool:
-        t = text.lower()
+        """Hard filter for naval/maritime relevance."""
+        t = (text or "").lower()
 
-    # At least ONE of these must appear
-    required_any = [
-        "naval", "maritime", "marine", "ship", "shipyard", "shipbuilding",
-        "dry dock", "drydock", "submarine", "sub-sea", "subsea", "uuv", "rov",
-        "sonar", "hull", "propulsion", "navsea", "navair", "onr", "us navy",
-        "coast guard", "oceanographic", "bathymetry"
-    ]
+        # Hard negatives – immediate reject
+        hard_negatives = [
+            "general contractor", "home builder", "residential", "roofing",
+            "landscap", "real estate", "property management",
+            "environmental consulting", "remediation", "abatement",
+            "wedding", "restaurant", "catering", "salon", "boutique",
+            "insurance", "bank", "law firm", "chiropractor"
+        ]
+        if any(n in t for n in hard_negatives):
+            return False
 
-    # If ANY of these appear, likely irrelevant for your use
-    hard_negatives = [
-        "general contractor", "home builder", "residential", "roofing",
-        "landscap", "real estate", "property management",
-        "environmental consulting", "remediation", "abatement",
-        "wedding", "restaurant", "catering", "salon", "boutique",
-        "insurance", "bank", "law firm", "chiropractor"
-    ]
-
-    if any(n in t for n in hard_negatives):
-        return False
-
-    return any(k in t for k in required_any)
+        # Require at least one strong naval/maritime signal
+        required_any = [
+            "naval", "us navy", "navy", "navsea", "navair", "onr",
+            "maritime", "marine", "ship", "shipyard", "shipbuilding",
+            "dry dock", "drydock", "submarine", "sub-sea", "subsea",
+            "uuv", "rov", "sonar", "hull", "propulsion",
+            "oceanographic", "bathymetry", "coast guard"
+        ]
+        return any(k in t for k in required_any)
 
     def _determine_business_size(self, name: str, types: List[str], place_data: Dict) -> str:
         """Enhanced business size determination"""
