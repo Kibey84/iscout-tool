@@ -377,31 +377,30 @@ class EnhancedCompanySearcher:
         scores['defense_score'] += naval_score
         scores['total_score'] += naval_score
 
-        # Enhanced keyword scoring with weights
         keyword_weights = {
             'manufacturing': {
-                'aerospace': 10, 'defense': 10, 'naval': 12, 'military': 9,
-                'shipbuilding': 15, 'marine engineering': 12, 'precision': 8,
-                'cnc': 6, 'machining': 7, 'fabrication': 6, 'welding': 5,
-                'manufacturing': 5, 'additive': 8, '3d printing': 7
+                # Only score if they're actual manufacturers
+                'cnc machining': 10, 'precision machining': 8, 'metal fabrication': 8,
+                'welding fabrication': 6, 'manufacturing engineering': 6,
+                'additive manufacturing': 8, '3d printing manufacturing': 7,
+                'aerospace manufacturing': 12, 'defense manufacturing': 10
             },
             'robotics': {
-                'robotics': 10, 'automation': 8, 'robotic': 9, 'automated': 7,
-                'fanuc': 8, 'kuka': 8, 'abb': 7, 'collaborative': 9,
-                'vision systems': 8, 'agv': 9
+                'robotics integration': 8, 'industrial automation': 6, 'robotic welding': 8,
+                'fanuc certified': 6, 'kuka certified': 6, 'automated systems': 5
             },
             'unmanned': {
-                'unmanned': 12, 'autonomous': 10, 'uav': 12, 'drone': 8,
-                'uuv': 15, 'usv': 15, 'auv': 15, 'rov': 12, 'swarm': 10
+                'uuv systems': 15, 'rov systems': 12, 'autonomous underwater': 15,
+                'unmanned surface': 12, 'drone manufacturing': 8
             },
             'workforce': {
-                'maritime training': 15, 'naval training': 18, 'shipyard training': 16,
-                'welding certification': 12, 'maritime academy': 15, 'apprenticeship': 10,
-                'technical training': 8, 'safety training': 7, 'simulation': 12
+                'maritime training academy': 12, 'naval training center': 15, 
+                'shipyard training programs': 12, 'welding certification programs': 8
             },
-            'defense': {
-                'defense contractor': 15, 'prime contractor': 12, 'subcontractor': 8,
-                'security clearance': 10, 'itar': 12, 'dfars': 10, 'classified': 8
+            'naval_specific': {
+                'shipbuilding': 20, 'shipyard': 18, 'naval systems': 15,
+                'marine engineering': 12, 'submarine systems': 18, 'sonar systems': 15,
+                'maritime electronics': 10, 'naval architecture': 12
             }
         }
         
@@ -458,15 +457,16 @@ class EnhancedCompanySearcher:
         elif review_count > 20:
             scores['size_bonus'] = 3.0
         
-        # Industry type penalties for irrelevant businesses
-        exclude_industries = [
-            'restaurant', 'gas_station', 'car_dealer', 'bank', 'insurance',
-            'real_estate', 'retail', 'grocery', 'pharmacy'
+        # Much stricter penalties for non-manufacturing
+        exclude_keywords_in_name = [
+            'restoration', 'remodeling', 'construction', 'facility services',
+            'general contractor', 'home', 'residential', 'commercial cleaning',
+            'environmental services', 'consulting', 'architecture', 'engineering services'
         ]
-        
-        for exclude_type in exclude_industries:
-            if exclude_type in industry:
-                scores['manufacturing_score'] = max(0, scores['manufacturing_score'] - 10)
+
+        for exclude in exclude_keywords_in_name:
+            if exclude in combined_text:
+                scores['total_score'] = max(0, scores['total_score'] - 20)  # Heavy penalty
         
         # Calculate total score with weights
         scores['total_score'] = (
