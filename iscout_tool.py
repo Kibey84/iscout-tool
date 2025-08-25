@@ -498,6 +498,80 @@ class EnhancedCompanySearcher:
 
         return scores
     
+    def _ai_evaluate_naval_relevance(self, company_data: Dict) -> Dict:
+        """AI-powered evaluation of naval supplier relevance"""
+    
+        # Create company profile for AI evaluation
+        company_profile = f"""
+        Company: {company_data.get('name', 'Unknown')}
+        Industry: {company_data.get('industry', 'Unknown')}
+        Description: {company_data.get('description', 'Unknown')}
+        Website: {company_data.get('website', 'Not available')}
+        """
+    
+        # Simple rule-based AI evaluation (can be upgraded to LLM later)
+        name = company_data.get('name', '').lower()
+        industry = company_data.get('industry', '').lower()
+        description = company_data.get('description', '').lower()
+    
+        combined = f"{name} {industry} {description}"
+    
+        # AI Decision Logic
+        evaluation = {
+            'is_manufacturer': False,
+            'naval_relevance': 0,
+            'confidence': 0,
+            'reasoning': []
+        }
+    
+        # Manufacturing indicators (high confidence)
+        manufacturing_signals = [
+            'machining', 'fabrication', 'manufacturing', 'foundry', 'mill',
+            'cnc', 'precision', 'welding', 'casting', 'forging'
+        ]
+    
+        # Naval/maritime indicators  
+        naval_signals = [
+            'shipyard', 'shipbuilding', 'marine engineering', 'naval',
+            'maritime', 'submarine', 'sonar', 'uuv', 'rov', 'vessel'
+        ]
+    
+        # Service company red flags (immediate disqualification)
+        service_red_flags = [
+            'recruiting', 'recruitment', 'office', 'headquarters', 'administration',
+            'consulting only', 'real estate', 'insurance', 'restaurant',
+            'general contractor', 'construction company', 'facility services'
+        ]
+    
+        # Check for disqualifiers first
+        for flag in service_red_flags:
+            if flag in combined:
+                evaluation['reasoning'].append(f"Disqualified: {flag}")
+                return evaluation
+    
+        # Check manufacturing capability
+        mfg_score = sum(1 for signal in manufacturing_signals if signal in combined)
+        if mfg_score > 0:
+            evaluation['is_manufacturer'] = True
+            evaluation['reasoning'].append(f"Manufacturing signals: {mfg_score}")
+    
+        # Check naval relevance
+        naval_score = sum(2 for signal in naval_signals if signal in combined)  # Higher weight
+        evaluation['naval_relevance'] = naval_score
+    
+        if naval_score > 0:
+            evaluation['reasoning'].append(f"Naval signals: {naval_score}")
+    
+        # Calculate confidence
+        if evaluation['is_manufacturer'] and naval_score > 0:
+            evaluation['confidence'] = min(90, mfg_score * 20 + naval_score * 10)
+        elif evaluation['is_manufacturer']:
+            evaluation['confidence'] = min(70, mfg_score * 15)
+        elif naval_score > 0:
+            evaluation['confidence'] = min(60, naval_score * 10)
+    
+        return evaluation
+
     def search_companies_sync(self) -> List[Dict]:
         """Synchronous company search"""
         api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
@@ -545,49 +619,29 @@ class EnhancedCompanySearcher:
         return unique_companies
     
     def _get_enhanced_search_queries(self) -> List[str]:
-        """Generate enhanced search queries"""
-        base_queries = [
-            # Major contractors
-            "Honeywell Aerospace", "Boeing manufacturing", "Lockheed Martin",
-            "Raytheon", "Northrop Grumman", "General Dynamics",
-            "BAE Systems", "L3Harris", "Collins Aerospace",
-            
-            # Manufacturing categories
-            "defense contractors", "aerospace manufacturing", "naval contractors",
-            "precision machining companies", "CNC machining services",
-            "metal fabrication LLC", "machine shop", "custom manufacturing",
-            "specialty manufacturing", "contract manufacturing",
-            "additive manufacturing", "3D printing services",
-            
-            # Shipbuilding and maritime
-            "shipyard", "marine engineering", "naval architecture",
-            "boat building", "vessel repair", "maritime systems",
-            
-            # Training and workforce
-            "maritime academy", "naval training center", "shipyard training",
-            "welding certification", "maritime safety training",
-            "technical training institute", "apprenticeship programs",
-            
-            # Technology and systems
-            "robotics integration", "industrial automation", "control systems",
-            "navigation systems", "radar systems", "sonar systems",
-            
-            # Unmanned systems
-            "unmanned systems", "autonomous vehicles", "UAV manufacturing",
-            "drone systems", "ROV systems", "UUV systems"
-        ]
-        
+        """Generate manufacturing-focused search queries"""
         return [
-            # Core naval/shipbuilding
-            "shipbuilding companies", "shipyard services", "naval architecture firm",
-            "ship repair yard", "dry dock services", "marine engineering",
-            "marine electronics integration", "sonar systems integrator",
-            "oceanographic equipment", "bathymetry systems", "marine propulsion systems",
-            "UUV manufacturer", "ROV manufacturer", "subsea systems integrator",
-
-            # Navy ecosystem cues
-            "NAVSEA supplier", "NAVAIR supplier", "US Navy contractor",
-            "coast guard ship repair", "maritime defense contractor",
+            # Specific manufacturing services
+            "CNC machining services", "precision machining", "metal fabrication shop",
+            "custom manufacturing", "contract manufacturing", "machine shop",
+            "welding fabrication", "sheet metal fabrication", "casting foundry",
+        
+            # Naval/maritime manufacturing
+            "shipbuilding company", "marine engineering", "naval architecture",
+            "maritime electronics", "sonar equipment", "submarine systems",
+            "ROV manufacturing", "UUV systems", "marine propulsion",
+        
+            # Defense manufacturing (not offices)
+            "defense contractor manufacturing", "aerospace manufacturing",
+            "military equipment manufacturer", "armament manufacturer",
+        
+            # Technology manufacturing
+            "robotics manufacturer", "automation systems", "control systems manufacturer",
+            "electronics manufacturing", "sensor manufacturer",
+        
+            # Training facilities (not recruiting)
+            "maritime training facility", "welding school", "technical training institute",
+            "apprenticeship program", "industrial training center"
         ]
     
     def search_google_places_text(self, query: str) -> List[Dict]:
