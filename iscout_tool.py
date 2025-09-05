@@ -1307,18 +1307,56 @@ def main():
                     # Create CSV for download
                     csv = export_df.to_csv(index=False)
                     
+                    # Create Excel file with formatting
+                    excel_buffer = BytesIO()
+                    
+                    try:
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            export_df.to_excel(writer, sheet_name='Naval Suppliers', index=False)
+                            
+                            # Get the workbook and worksheet
+                            workbook = writer.book
+                            worksheet = writer.sheets['Naval Suppliers']
+                            
+                            # Auto-adjust column widths
+                            for column in worksheet.columns:
+                                max_length = 0
+                                column_letter = column[0].column_letter
+                                for cell in column:
+                                    try:
+                                        if len(str(cell.value)) > max_length:
+                                            max_length = len(str(cell.value))
+                                    except:
+                                        pass
+                                adjusted_width = min(max_length + 2, 50)
+                                worksheet.column_dimensions[column_letter].width = adjusted_width
+                        
+                        excel_buffer.seek(0)
+                        excel_available = True
+                    except ImportError:
+                        excel_available = False
+                        st.warning("Excel export requires openpyxl package. Install with: pip install openpyxl")
+                    
                     # Download buttons
                     col1, col2 = st.columns(2)
                     with col1:
                         st.download_button(
-                            label="📥 Download CSV (Plain Text)",
+                            label="📥 Download CSV",
                             data=csv,
                             file_name=f"enhanced_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                             mime="text/csv"
                         )
                     
                     with col2:
-                        st.button("📊 Excel Export", help="Excel export coming soon", disabled=True)
+                        if excel_available:
+                            st.download_button(
+                                label="📊 Download Excel",
+                                data=excel_buffer,
+                                file_name=f"enhanced_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        else:
+                            st.button("📊 Excel (Install openpyxl)", disabled=True)
                     
                     # Enhanced executive report
                     with st.expander("📋 Enhanced Executive Report Preview"):
