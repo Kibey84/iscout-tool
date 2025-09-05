@@ -19,40 +19,78 @@ class SearchConfig:
     base_location: str = "South Bend, Indiana"
     radius_miles: int = 60
     target_company_count: int = 100
+    search_multi_state: bool = False
+    enable_association_search: bool = True
+    
+    # Enhanced keyword categories (restored from original)
+    manufacturing_keywords: List[str] = field(default_factory=lambda: [
+        "advanced manufacturing", "precision machining", "metal fabrication",
+        "additive manufacturing", "3D printing", "CNC machining",
+        "welding", "assembly", "fabrication", "machining", "casting",
+        "forging", "sheet metal", "tool and die", "injection molding",
+        "shipbuilding", "naval shipyard", "marine engineering", "hull fabrication"
+    ])
+    
+    # NEW: Microelectronics keywords (HIGH PRIORITY for Navy microelectronics center)
+    microelectronics_keywords: List[str] = field(default_factory=lambda: [
+        "microelectronics", "semiconductor", "electronics manufacturing",
+        "PCB manufacturing", "printed circuit board", "IC design",
+        "integrated circuits", "electronic components", "naval electronics",
+        "maritime electronics", "avionics", "radar systems", "sonar electronics",
+        "navigation electronics", "communication systems", "electronic warfare",
+        "signal processing", "embedded systems", "microprocessors",
+        "FPGA", "analog circuits", "digital circuits", "RF electronics"
+    ])
+    
+    robotics_keywords: List[str] = field(default_factory=lambda: [
+        "robotics", "automation", "robotic welding", "industrial automation",
+        "automated inspection", "robotics integration", "FANUC", "KUKA",
+        "automated systems", "robotic systems", "collaborative robots",
+        "AGV", "automated guided vehicles", "vision systems"
+    ])
+    
+    unmanned_keywords: List[str] = field(default_factory=lambda: [
+        "unmanned systems", "autonomous", "UAV", "UUV", "USV",
+        "drone", "autonomous vehicles", "unmanned vehicles",
+        "remote systems", "autonomous systems", "ROV", "AUV",
+        "unmanned ground vehicles", "swarm robotics",
+        "underwater drones", "maritime autonomous", "naval drones"
+    ])
+    
+    workforce_keywords: List[str] = field(default_factory=lambda: [
+        "naval training", "maritime training", "shipyard training", "welding certification",
+        "maritime academy", "technical training", "apprenticeship", "workforce development",
+        "skills training", "industrial training", "safety training", "crane operator training",
+        "maritime safety", "naval education", "defense training", "military training",
+        "shipbuilding training", "marine engineering training", "technical certification",
+        "OSHA training", "maritime simulation", "deck officer training",
+        "electronics training", "microelectronics training", "semiconductor training"
+    ])
+    
+    defense_keywords: List[str] = field(default_factory=lambda: [
+        "defense contractor", "military contractor", "naval contractor",
+        "aerospace defense", "prime contractor", "subcontractor",
+        "DFARS", "ITAR", "security clearance", "classified work",
+        "government contracting", "GSA schedule"
+    ])
 
-class RealNavalSearcher:
+class EnhancedNavalSearcher:
     def __init__(self, config: SearchConfig):
         self.config = config
         
     def search_companies(self) -> List[Dict]:
-        """Search for real companies using Google Places API"""
+        """Enhanced company search with microelectronics focus"""
         api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
         
         if not api_key:
-            st.error("🔑 Google Places API key is REQUIRED for real company search")
-            st.info("Add your API key in the sidebar to search for actual companies")
+            st.error("🔑 Google Places API key is REQUIRED for company search")
+            st.info("Add your API key in the sidebar to search for companies")
             return []
         
-        st.info("🔍 Searching for real naval/manufacturing companies...")
+        st.info("🔍 Searching for naval/manufacturing companies with enhanced queries...")
         
-        # Real search queries
-        search_queries = [
-            f"manufacturing companies near {self.config.base_location}",
-            f"machining companies near {self.config.base_location}",
-            f"metal fabrication near {self.config.base_location}",
-            f"welding companies near {self.config.base_location}",
-            f"precision manufacturing near {self.config.base_location}",
-            f"aerospace companies near {self.config.base_location}",
-            f"defense contractors near {self.config.base_location}",
-            f"shipbuilding near {self.config.base_location}",
-            f"marine engineering near {self.config.base_location}",
-            f"robotics companies near {self.config.base_location}",
-            f"automation companies near {self.config.base_location}",
-            f"cnc machining near {self.config.base_location}",
-            f"industrial automation near {self.config.base_location}",
-            f"electronics manufacturing near {self.config.base_location}",
-            f"naval systems near {self.config.base_location}"
-        ]
+        # Enhanced search queries with microelectronics priority
+        search_queries = self._get_enhanced_search_queries()
         
         all_companies = []
         progress_bar = st.progress(0)
@@ -66,20 +104,70 @@ class RealNavalSearcher:
         
         progress_bar.empty()
         
-        # Process and deduplicate
-        unique_companies = self._process_companies(all_companies)
+        # Process and deduplicate with enhanced scoring
+        unique_companies = self._process_companies_enhanced(all_companies)
         
-        st.success(f"✅ Found {len(unique_companies)} real companies")
+        st.success(f"✅ Found {len(unique_companies)} companies with enhanced scoring")
         return unique_companies
     
+    def _get_enhanced_search_queries(self) -> List[str]:
+        """Generate enhanced search queries with microelectronics focus"""
+        base_location = self.config.base_location
+        
+        return [
+            # MICROELECTRONICS (TOP PRIORITY for Navy microelectronics center)
+            f"microelectronics manufacturing near {base_location}",
+            f"semiconductor companies near {base_location}",
+            f"electronics manufacturing near {base_location}",
+            f"PCB manufacturing near {base_location}",
+            f"naval electronics near {base_location}",
+            f"radar systems near {base_location}",
+            f"sonar electronics near {base_location}",
+            f"electronic components near {base_location}",
+            
+            # SHIPBUILDING AND NAVAL MANUFACTURING  
+            f"shipbuilding company near {base_location}",
+            f"marine engineering near {base_location}",
+            f"naval architecture near {base_location}",
+            f"hull fabrication near {base_location}",
+            f"shipyard services near {base_location}",
+            f"submarine systems near {base_location}",
+            
+            # DEFENSE MANUFACTURING
+            f"defense contractor manufacturing near {base_location}",
+            f"aerospace manufacturing near {base_location}",
+            f"military equipment manufacturer near {base_location}",
+            f"naval systems manufacturer near {base_location}",
+        
+            # ADVANCED MANUFACTURING
+            f"CNC machining services near {base_location}",
+            f"precision machining near {base_location}",
+            f"metal fabrication shop near {base_location}",
+            f"custom manufacturing near {base_location}",
+            f"contract manufacturing near {base_location}",
+            f"welding fabrication near {base_location}",
+            f"additive manufacturing near {base_location}",
+        
+            # ROBOTICS AND AUTOMATION
+            f"robotics manufacturer near {base_location}",
+            f"automation systems near {base_location}",
+            f"control systems manufacturer near {base_location}",
+        
+            # TRAINING FACILITIES
+            f"maritime training facility near {base_location}",
+            f"welding school near {base_location}",
+            f"technical training institute near {base_location}",
+            f"electronics training near {base_location}"
+        ]
+    
     def _search_google_places(self, query: str, api_key: str) -> List[Dict]:
-        """Search Google Places API for real companies"""
+        """Enhanced Google Places search with better filtering"""
         url = "https://places.googleapis.com/v1/places:searchText"
         
         headers = {
             'Content-Type': 'application/json',
             'X-Goog-Api-Key': api_key,
-            'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount'
+            'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus'
         }
         
         request_data = {
@@ -92,7 +180,7 @@ class RealNavalSearcher:
             
             if response.status_code == 200:
                 data = response.json()
-                return self._process_places_response(data.get('places', []))
+                return self._process_places_response(data.get('places', []), query)
             elif response.status_code == 403:
                 st.error("❌ API key doesn't have permission. Enable 'Places API (New)' and billing.")
                 return []
@@ -104,8 +192,8 @@ class RealNavalSearcher:
             st.warning(f"Search error for '{query}': {str(e)}")
             return []
     
-    def _process_places_response(self, places: List[Dict]) -> List[Dict]:
-        """Process Google Places response into company data"""
+    def _process_places_response(self, places: List[Dict], query: str) -> List[Dict]:
+        """Process Google Places response with enhanced filtering"""
         companies = []
         
         for place in places:
@@ -113,8 +201,8 @@ class RealNavalSearcher:
                 name = place.get('displayName', {}).get('text', 'Unknown')
                 types = place.get('types', [])
                 
-                # Filter for relevant businesses
-                if self._is_relevant_business(name, types):
+                # Enhanced relevance filtering
+                if self._is_naval_manufacturing_relevant(name, types):
                     lat = place.get('location', {}).get('latitude', 0)
                     lon = place.get('location', {}).get('longitude', 0)
                     
@@ -122,15 +210,16 @@ class RealNavalSearcher:
                         'name': name,
                         'location': place.get('formattedAddress', 'Unknown'),
                         'industry': ', '.join(types[:3]) if types else 'Manufacturing',
-                        'description': self._generate_description(name, types),
-                        'size': self._determine_business_size(name, types, place),
-                        'capabilities': self._extract_capabilities(name, types),
+                        'description': self._generate_enhanced_description(name, types, query),
+                        'size': self._determine_business_size_enhanced(name, types, place),
+                        'capabilities': self._extract_capabilities_enhanced(name, types),
                         'lat': lat,
                         'lon': lon,
                         'website': place.get('websiteUri', 'Not available'),
                         'phone': place.get('nationalPhoneNumber', 'Not available'),
                         'rating': place.get('rating', 0),
-                        'user_ratings_total': place.get('userRatingCount', 0)
+                        'user_ratings_total': place.get('userRatingCount', 0),
+                        'types': types
                     }
                     companies.append(company)
                     
@@ -139,132 +228,205 @@ class RealNavalSearcher:
         
         return companies
     
-    def _is_relevant_business(self, name: str, types: List[str]) -> bool:
-        """Filter for manufacturing/engineering businesses"""
+    def _is_naval_manufacturing_relevant(self, name: str, types: List[str]) -> bool:
+        """Enhanced filtering for naval/manufacturing relevance"""
         name_lower = name.lower()
         types_str = ' '.join(types).lower()
         combined = f"{name_lower} {types_str}"
         
-        # Exclude obvious non-manufacturers
-        exclude_keywords = [
-            'restaurant', 'food', 'retail', 'store', 'bank', 'insurance', 
-            'real estate', 'school', 'hospital', 'hotel', 'gas station',
-            'auto repair', 'automotive repair', 'hair salon', 'nail salon'
+        # STRICT exclusions - these should NEVER appear
+        hard_exclude = [
+            'restaurant', 'food', 'catering', 'retail', 'store', 'bank', 'insurance',
+            'real estate', 'school', 'hospital', 'hotel', 'gas station', 'pharmacy',
+            'auto repair', 'automotive repair', 'hair salon', 'nail salon', 'spa',
+            'cleaning services', 'janitorial', 'landscaping', 'roofing', 'flooring',
+            'residential construction', 'home improvement', 'interior design'
         ]
         
-        for word in exclude_keywords:
-            if word in combined:
+        for exclude in hard_exclude:
+            if exclude in combined:
                 return False
         
-        # Include manufacturing/engineering indicators
-        include_keywords = [
-            'manufacturing', 'machining', 'fabrication', 'welding', 'engineering',
-            'aerospace', 'defense', 'precision', 'cnc', 'automation', 'robotics',
-            'metal', 'industrial', 'contractor', 'systems', 'technologies',
-            'marine', 'naval', 'shipyard', 'electronics', 'semiconductor'
+        # MUST have manufacturing/naval/electronics indicators
+        required_indicators = [
+            # Manufacturing
+            'manufacturing', 'machining', 'fabrication', 'welding', 'casting',
+            'forging', 'cnc', 'precision', 'metal', 'steel', 'aluminum',
+            'assembly', 'production',
+            
+            # Naval/maritime
+            'shipyard', 'shipbuilding', 'marine', 'naval', 'maritime',
+            'submarine', 'vessel', 'boat', 'ship', 'hull',
+            
+            # Electronics/microelectronics
+            'electronics', 'microelectronics', 'semiconductor', 'pcb',
+            'electronic components', 'circuits', 'radar', 'sonar',
+            
+            # Defense/aerospace
+            'aerospace', 'defense contractor', 'military contractor',
+            'avionics', 'defense systems',
+            
+            # Technology/automation
+            'robotics', 'automation', 'systems integration', 'controls',
+            
+            # Training (naval specific)
+            'maritime academy', 'naval training', 'shipyard training',
+            'welding certification', 'maritime training'
         ]
         
-        for word in include_keywords:
-            if word in combined:
-                return True
+        # Must have at least one manufacturing/naval indicator
+        has_relevant_indicator = any(indicator in combined for indicator in required_indicators)
         
-        # Also include certain business types
-        relevant_types = ['manufacturer', 'engineering', 'contractor', 'technology']
-        for btype in relevant_types:
-            if btype in types_str:
-                return True
+        # Business types that indicate manufacturing
+        manufacturing_types = [
+            'manufacturer', 'machine_shop', 'factory', 'foundry', 'mill',
+            'engineering', 'contractor', 'technology'
+        ]
+        has_mfg_type = any(mtype in types_str for mtype in manufacturing_types)
         
-        return False
+        return has_relevant_indicator or has_mfg_type
     
-    def _generate_description(self, name: str, types: List[str]) -> str:
-        """Generate description based on business name and types"""
+    def _generate_enhanced_description(self, name: str, types: List[str], query: str) -> str:
+        """Generate enhanced description based on search context"""
         base_desc = f"Business type: {', '.join(types[:2]) if types else 'Manufacturing'}"
         
         name_lower = name.lower()
-        if 'aerospace' in name_lower:
-            base_desc += " - Aerospace industry focus"
-        elif 'defense' in name_lower:
-            base_desc += " - Defense contractor"
-        elif 'marine' in name_lower or 'naval' in name_lower:
-            base_desc += " - Marine/Naval systems"
+        query_lower = query.lower()
+        
+        # Add context based on search query and company name
+        if 'microelectronics' in query_lower or 'semiconductor' in query_lower:
+            base_desc += " - Microelectronics/Semiconductor focus"
+        elif 'electronics' in query_lower:
+            base_desc += " - Electronics manufacturing"
+        elif 'naval' in query_lower or 'marine' in query_lower:
+            base_desc += " - Naval/Maritime systems"
+        elif 'aerospace' in query_lower or 'defense' in query_lower:
+            base_desc += " - Aerospace/Defense contractor"
+        elif 'shipbuilding' in query_lower:
+            base_desc += " - Shipbuilding industry"
         elif 'precision' in name_lower:
             base_desc += " - Precision manufacturing"
+        elif 'automation' in query_lower or 'robotics' in query_lower:
+            base_desc += " - Automation/Robotics systems"
         
         return base_desc
     
-    def _determine_business_size(self, name: str, types: List[str], place_data: Dict) -> str:
-        """Determine business size based on indicators"""
+    def _determine_business_size_enhanced(self, name: str, types: List[str], place_data: Dict) -> str:
+        """Enhanced business size determination"""
         name_lower = name.lower()
         review_count = place_data.get('userRatingCount', 0)
+        rating = place_data.get('rating', 0)
         
-        # Major corporations
+        # Major defense/aerospace corporations
         major_corps = [
-            'honeywell', 'boeing', 'lockheed', 'raytheon', 'northrop', 'general dynamics',
-            'bae systems', 'textron', 'collins aerospace', 'general electric'
+            'honeywell', 'boeing', 'lockheed martin', 'raytheon', 'northrop grumman',
+            'general dynamics', 'bae systems', 'textron', 'collins aerospace',
+            'general electric', 'pratt whitney', 'rolls royce', 'caterpillar',
+            'huntington ingalls', 'newport news shipbuilding', 'bath iron works',
+            'electric boat', 'l3harris', 'intel', 'texas instruments'
         ]
         
         for corp in major_corps:
             if corp in name_lower:
-                return 'Large Corporation'
+                return 'Fortune 500 / Major Corporation'
         
-        # Use review count as size indicator
-        if review_count > 100:
+        # Enhanced size determination using multiple factors
+        if review_count > 200 or (review_count > 100 and rating > 4.0):
             return 'Large Corporation'
-        elif review_count > 50:
+        elif review_count > 50 or (review_count > 25 and rating > 4.2):
             return 'Medium Business'
         elif review_count > 10:
             return 'Small-Medium Business'
         else:
             return 'Small Business'
     
-    def _extract_capabilities(self, name: str, types: List[str]) -> List[str]:
-        """Extract capabilities from name and business types"""
+    def _extract_capabilities_enhanced(self, name: str, types: List[str]) -> List[str]:
+        """Enhanced capability extraction"""
         name_lower = name.lower()
+        types_str = ' '.join(types).lower()
         capabilities = set()
         
         capability_mapping = {
+            # Manufacturing capabilities
             'cnc': 'CNC Machining',
             'machining': 'Precision Machining',
             'welding': 'Welding Services',
             'fabrication': 'Metal Fabrication',
             'manufacturing': 'Manufacturing',
+            'casting': 'Metal Casting',
+            'forging': 'Metal Forging',
+            'sheet metal': 'Sheet Metal Work',
+            'additive': '3D Printing/Additive Manufacturing',
+            '3d printing': '3D Printing/Additive Manufacturing',
+            
+            # Microelectronics and electronics
+            'microelectronics': 'Microelectronics Manufacturing',
+            'semiconductor': 'Semiconductor Design/Fab',
+            'pcb': 'PCB Manufacturing',
+            'electronics': 'Electronics Manufacturing',
+            'electronic components': 'Electronic Components',
+            'circuits': 'Circuit Design/Manufacturing',
+            'radar': 'Radar Systems',
+            'sonar': 'Sonar Systems',
+            'avionics': 'Avionics Systems',
+            
+            # Automation and robotics
             'automation': 'Industrial Automation',
             'robotics': 'Robotics Integration',
+            'robotic': 'Robotic Systems',
+            'vision': 'Machine Vision Systems',
+            'control': 'Process Control Systems',
+            
+            # Naval and maritime
+            'shipyard': 'Shipbuilding',
+            'shipbuilding': 'Shipbuilding',
+            'marine': 'Marine Engineering',
+            'naval': 'Naval Systems',
+            'maritime': 'Maritime Systems',
+            'submarine': 'Submarine Systems',
+            'hull': 'Hull Fabrication',
+            
+            # Aerospace and defense
             'aerospace': 'Aerospace Manufacturing',
             'defense': 'Defense Systems',
-            'marine': 'Marine Engineering',
-            'electronics': 'Electronics Manufacturing',
-            'precision': 'Precision Manufacturing'
+            'military': 'Military Systems',
+            
+            # Training and education
+            'training': 'Training Services',
+            'academy': 'Educational Academy',
+            'certification': 'Certification Programs',
+            'apprenticeship': 'Apprenticeship Programs'
         }
         
-        combined_text = f"{name_lower} {' '.join(types).lower()}"
+        combined_text = f"{name_lower} {types_str}"
         for keyword, capability in capability_mapping.items():
             if keyword in combined_text:
                 capabilities.add(capability)
         
         return list(capabilities) if capabilities else ['General Manufacturing']
     
-    def _process_companies(self, all_companies: List[Dict]) -> List[Dict]:
-        """Remove duplicates and add scoring"""
+    def _process_companies_enhanced(self, all_companies: List[Dict]) -> List[Dict]:
+        """Enhanced processing with advanced scoring"""
         unique_companies = []
         seen = set()
         
         for company in all_companies:
-            # Duplicate detection
-            key = (company['name'].lower(), company['location'][:50].lower())
+            # Enhanced duplicate detection
+            key = (company['name'].lower().strip(), company['location'][:50].lower().strip())
             
             if key not in seen:
                 seen.add(key)
                 
-                # Add distance calculation (simplified)
+                # Add distance calculation
                 company['distance_miles'] = self._estimate_distance(company['lat'], company['lon'])
                 
-                # Add scoring
-                scores = self._calculate_relevance_scores(company)
+                # Enhanced scoring with multiple categories
+                scores = self._calculate_enhanced_relevance_scores(company)
                 company.update(scores)
                 
-                # Filter by distance
-                if company['distance_miles'] <= self.config.radius_miles:
+                # Filter by distance and minimum relevance
+                if (company['distance_miles'] <= self.config.radius_miles and 
+                    company['total_score'] >= 5):  # Minimum threshold
                     unique_companies.append(company)
         
         # Sort by total score
@@ -273,88 +435,137 @@ class RealNavalSearcher:
         return unique_companies[:self.config.target_company_count]
     
     def _estimate_distance(self, lat: float, lon: float) -> float:
-        """Simple distance estimation (replace with actual geopy if available)"""
-        # Default base coordinates for South Bend
-        base_lat, base_lon = 41.6764, -86.2520
+        """Enhanced distance estimation with better base coordinates"""
+        # Enhanced base coordinates for major naval locations
+        base_coords = {
+            'south bend': (41.6764, -86.2520),
+            'norfolk': (36.8508, -76.2859),
+            'san diego': (32.7157, -117.1611),
+            'pearl harbor': (21.3099, -157.8581),
+            'newport news': (37.0871, -76.4730),
+            'bath': (43.9109, -69.8214),
+            'groton': (41.3501, -72.0979)
+        }
+        
+        # Find base coordinates for location
+        base_lat, base_lon = 41.6764, -86.2520  # Default to South Bend
+        for location_key, coords in base_coords.items():
+            if location_key in self.config.base_location.lower():
+                base_lat, base_lon = coords
+                break
         
         if lat == 0 or lon == 0:
             return 999.0
         
-        # Simple approximation
+        # Simple distance approximation
         lat_diff = abs(lat - base_lat)
         lon_diff = abs(lon - base_lon)
         distance = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 69  # Rough miles conversion
         
         return round(distance, 1)
     
-    def _calculate_relevance_scores(self, company: Dict) -> Dict:
-        """Calculate relevance scores for real company data"""
+    def _calculate_enhanced_relevance_scores(self, company: Dict) -> Dict:
+        """Enhanced scoring system with microelectronics emphasis"""
         name = company['name'].lower()
         industry = company['industry'].lower()
         description = company['description'].lower()
-        combined = f"{name} {industry} {description}"
+        capabilities = ' '.join(company['capabilities']).lower()
+        combined = f"{name} {industry} {description} {capabilities}"
         
         scores = {
-            'manufacturing_score': 0,
-            'robotics_score': 0,
-            'unmanned_score': 0,
-            'workforce_score': 0,
-            'defense_score': 0,
-            'total_score': 0
+            'manufacturing_score': 0.0,
+            'microelectronics_score': 0.0,  # NEW: High priority
+            'robotics_score': 0.0,
+            'unmanned_score': 0.0,
+            'workforce_score': 0.0,
+            'defense_score': 0.0,
+            'naval_score': 0.0,  # NEW: Naval specific
+            'total_score': 0.0
         }
         
-        # Manufacturing scoring
-        manufacturing_keywords = {
-            'manufacturing': 5, 'machining': 4, 'fabrication': 4, 'welding': 3,
-            'precision': 3, 'cnc': 4, 'metal': 2, 'aerospace': 6, 'marine': 4
+        # MICROELECTRONICS SCORING (HIGHEST PRIORITY)
+        microelectronics_weights = {
+            "microelectronics": 25, "semiconductor": 20, "pcb manufacturing": 18,
+            "electronics manufacturing": 15, "integrated circuits": 18, "ic design": 20,
+            "naval electronics": 22, "maritime electronics": 20, "avionics": 15,
+            "radar systems": 18, "sonar electronics": 18, "navigation electronics": 16,
+            "communication systems": 14, "electronic warfare": 20, "signal processing": 16,
+            "embedded systems": 14, "microprocessors": 16, "fpga": 15,
+            "electronic components": 12, "circuits": 10
         }
         
-        for keyword, points in manufacturing_keywords.items():
+        for keyword, weight in microelectronics_weights.items():
             if keyword in combined:
-                scores['manufacturing_score'] += points
+                scores['microelectronics_score'] += weight
         
-        # Robotics scoring
-        robotics_keywords = {
-            'robotics': 5, 'automation': 4, 'robotic': 4, 'automated': 3
+        # NAVAL/MARITIME SCORING
+        naval_weights = {
+            "shipbuilding": 25, "naval shipyard": 28, "hull fabrication": 20,
+            "marine engineering": 18, "submarine": 25, "naval systems": 22,
+            "maritime": 15, "shipyard": 20, "vessel": 12, "marine": 12,
+            "navy": 20, "naval": 18, "coast guard": 16
         }
         
-        for keyword, points in robotics_keywords.items():
+        for keyword, weight in naval_weights.items():
             if keyword in combined:
-                scores['robotics_score'] += points
+                scores['naval_score'] += weight
         
-        # Defense scoring
-        defense_keywords = {
-            'defense': 6, 'naval': 6, 'military': 5, 'aerospace': 4, 'marine': 3
+        # MANUFACTURING SCORING
+        manufacturing_weights = {
+            'precision machining': 12, 'cnc machining': 10, 'metal fabrication': 8,
+            'welding': 6, 'manufacturing': 8, 'aerospace manufacturing': 12,
+            'defense manufacturing': 10, 'additive manufacturing': 8
         }
         
-        for keyword, points in defense_keywords.items():
+        for keyword, weight in manufacturing_weights.items():
             if keyword in combined:
-                scores['defense_score'] += points
+                scores['manufacturing_score'] += weight
         
-        # Quality bonuses
+        # DEFENSE SCORING
+        defense_weights = {
+            'defense contractor': 15, 'military contractor': 12, 'aerospace': 10,
+            'defense systems': 12, 'military systems': 10, 'government contracting': 8
+        }
+        
+        for keyword, weight in defense_weights.items():
+            if keyword in combined:
+                scores['defense_score'] += weight
+        
+        # ROBOTICS SCORING
+        robotics_weights = {
+            'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8
+        }
+        
+        for keyword, weight in robotics_weights.items():
+            if keyword in combined:
+                scores['robotics_score'] += weight
+        
+        # QUALITY BONUSES
         rating = company.get('rating', 0)
         review_count = company.get('user_ratings_total', 0)
         
         quality_bonus = 0
         if rating >= 4.5 and review_count >= 10:
-            quality_bonus = 3
+            quality_bonus = 5
         elif rating >= 4.0 and review_count >= 5:
-            quality_bonus = 2
+            quality_bonus = 3
         
-        # Calculate total score
+        # Calculate total score with MICROELECTRONICS EMPHASIS
         scores['total_score'] = (
-            scores['manufacturing_score'] +
-            scores['robotics_score'] +
-            scores['unmanned_score'] +
-            scores['workforce_score'] +
-            scores['defense_score'] +
+            scores['manufacturing_score'] * 1.0 +
+            scores['microelectronics_score'] * 2.0 +  # HIGHEST WEIGHT
+            scores['naval_score'] * 1.5 +
+            scores['defense_score'] * 1.2 +
+            scores['robotics_score'] * 0.8 +
+            scores['unmanned_score'] * 0.9 +
+            scores['workforce_score'] * 0.7 +
             quality_bonus
         )
         
         return scores
 
-def create_company_map(companies: List[Dict], base_location: str):
-    """Create interactive map of real companies"""
+def create_enhanced_company_map(companies: List[Dict], base_location: str):
+    """Create enhanced map with better scoring visualization"""
     if not companies:
         return None
     
@@ -366,10 +577,26 @@ def create_company_map(companies: List[Dict], base_location: str):
     if df.empty:
         return None
     
+    # Enhanced base coordinates
+    base_coords = {
+        'south bend': (41.6764, -86.2520),
+        'norfolk': (36.8508, -76.2859),
+        'san diego': (32.7157, -117.1611),
+        'pearl harbor': (21.3099, -157.8581),
+        'newport news': (37.0871, -76.4730),
+        'bath': (43.9109, -69.8214),
+        'groton': (41.3501, -72.0979)
+    }
+    
+    base_lat, base_lon = 41.6764, -86.2520  # Default
+    for key, coords in base_coords.items():
+        if key in base_location.lower():
+            base_lat, base_lon = coords
+            break
+    
     fig = go.Figure()
     
-    # Add base location (approximate)
-    base_lat, base_lon = 41.6764, -86.2520  # South Bend default
+    # Add base location
     fig.add_trace(go.Scattermapbox(
         lat=[base_lat],
         lon=[base_lon],
@@ -379,19 +606,19 @@ def create_company_map(companies: List[Dict], base_location: str):
         name='Base Location'
     ))
     
-    # Add companies
+    # Add companies with enhanced scoring
     fig.add_trace(go.Scattermapbox(
         lat=df['lat'],
         lon=df['lon'],
         mode='markers',
         marker=dict(
-            size=10,
+            size=12,
             color=df['total_score'],
             colorscale='Viridis',
             showscale=True,
-            colorbar=dict(title="Relevance Score")
+            colorbar=dict(title="Enhanced Score")
         ),
-        text=[f"{row['name']}<br>Score: {row['total_score']}<br>Distance: {row['distance_miles']} mi" 
+        text=[f"{row['name']}<br>Total Score: {row['total_score']:.1f}<br>Microelectronics: {row['microelectronics_score']:.1f}<br>Naval: {row['naval_score']:.1f}<br>Distance: {row['distance_miles']} mi" 
               for _, row in df.iterrows()],
         name='Companies'
     ))
@@ -403,72 +630,66 @@ def create_company_map(companies: List[Dict], base_location: str):
             zoom=8
         ),
         height=600,
-        title="Real Naval Supplier Companies"
+        title="Enhanced Naval Supplier Intelligence Map"
     )
     
     return fig
 
 def create_enhanced_metrics_dashboard(companies: List[Dict]) -> str:
-    """Create metrics dashboard HTML"""
+    """Create enhanced metrics dashboard with new scoring categories"""
     if not companies:
         return ""
     
     df = pd.DataFrame(companies)
     
     total_companies = len(companies)
-    high_relevance = len(df[df['total_score'] >= 10])
+    high_relevance = len(df[df['total_score'] >= 15])
+    microelectronics_companies = len(df[df['microelectronics_score'] >= 10])
+    naval_focused = len(df[df['naval_score'] >= 10])
+    defense_contractors = len(df[df['defense_score'] >= 8])
     small_businesses = len(df[df['size'].str.contains('Small', na=False)])
     avg_distance = df['distance_miles'].mean()
-    avg_rating = df['rating'].mean()
-    defense_contractors = len(df[df['industry'].str.contains('Defense|Naval|Aerospace', case=False, na=False)])
-    
-    # Get top capability
-    all_caps = []
-    for caps in df['capabilities']:
-        all_caps.extend(caps)
-    top_capability = pd.Series(all_caps).value_counts().index[0] if all_caps else "N/A"
-    
     quality_suppliers = len(df[(df['rating'] >= 4.0) & (df['user_ratings_total'] >= 10)])
     
     return f"""
     <div class="metric-grid">
         <div class="metric-card">
             <p class="metric-value">{total_companies}</p>
-            <p class="metric-label">Total Suppliers Found</p>
+            <p class="metric-label">Total Suppliers</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-value">{microelectronics_companies}</p>
+            <p class="metric-label">Microelectronics Focus</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-value">{naval_focused}</p>
+            <p class="metric-label">Naval/Maritime</p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-value">{defense_contractors}</p>
+            <p class="metric-label">Defense Contractors</p>
         </div>
         <div class="metric-card">
             <p class="metric-value">{high_relevance}</p>
-            <p class="metric-label">High Naval Relevance</p>
+            <p class="metric-label">High Relevance</p>
         </div>
         <div class="metric-card">
             <p class="metric-value">{small_businesses}</p>
             <p class="metric-label">Small Businesses</p>
         </div>
         <div class="metric-card">
-            <p class="metric-value">{avg_distance:.1f} mi</p>
-            <p class="metric-label">Average Distance</p>
-        </div>
-        <div class="metric-card">
             <p class="metric-value">{quality_suppliers}</p>
             <p class="metric-label">Quality Suppliers</p>
         </div>
         <div class="metric-card">
-            <p class="metric-value">{defense_contractors}</p>
-            <p class="metric-label">Defense Focus</p>
-        </div>
-        <div class="metric-card">
-            <p class="metric-value">{avg_rating:.1f}⭐</p>
-            <p class="metric-label">Average Rating</p>
-        </div>
-        <div class="metric-card">
-            <p class="metric-value">{top_capability[:15]}</p>
-            <p class="metric-label">Top Capability</p>
+            <p class="metric-value">{avg_distance:.1f} mi</p>
+            <p class="metric-label">Avg Distance</p>
         </div>
     </div>
     """
 
-def generate_executive_report(companies: List[Dict], config: SearchConfig) -> str:
-    """Generate executive report"""
+def generate_enhanced_executive_report(companies: List[Dict], config: SearchConfig) -> str:
+    """Generate enhanced executive report with new scoring"""
     if not companies:
         return "No companies found for analysis."
     
@@ -476,56 +697,80 @@ def generate_executive_report(companies: List[Dict], config: SearchConfig) -> st
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     total_companies = len(companies)
-    high_value_companies = len(df[df['total_score'] >= 10])
-    defense_companies = len(df[df['industry'].str.contains('Defense|Naval|Aerospace', case=False, na=False)])
-    small_businesses = len(df[df['size'].str.contains('Small', na=False)])
+    microelectronics_companies = len(df[df['microelectronics_score'] >= 10])
+    naval_companies = len(df[df['naval_score'] >= 10])
+    high_value_companies = len(df[df['total_score'] >= 15])
     
-    # Top companies
-    top_companies = df.nlargest(5, 'total_score')
+    # Top companies by different categories
+    top_overall = df.nlargest(3, 'total_score')
+    top_microelectronics = df.nlargest(3, 'microelectronics_score')
+    top_naval = df.nlargest(3, 'naval_score')
     
     report = f"""
-# 🎯 WBI Naval Search - Executive Intelligence Report
+# 🎯 WBI Naval Search - Enhanced Intelligence Report
 
 **Generated:** {current_time}  
 **Search Location:** {config.base_location}  
 **Search Radius:** {config.radius_miles} miles  
+**Enhanced Scoring:** Microelectronics, Naval, Defense, Manufacturing
 
 ## 📊 Executive Summary
 
-Real company search identified **{total_companies} verified suppliers** within {config.radius_miles} miles of {config.base_location}.
+Enhanced search identified **{total_companies} validated suppliers** with multi-category scoring.
 
 ### Key Findings:
-- **{high_value_companies}** companies demonstrate high naval relevance (score ≥ 10)
-- **{defense_companies}** companies have direct defense/aerospace focus
-- **{small_businesses}** small businesses identified for partnership opportunities
-- **{df['distance_miles'].mean():.1f} miles** average supplier distance from base
+- **{microelectronics_companies}** companies with microelectronics capabilities (score ≥ 10)
+- **{naval_companies}** companies with naval/maritime focus (score ≥ 10)
+- **{high_value_companies}** high-value suppliers overall (score ≥ 15)
+- **{df['distance_miles'].mean():.1f} miles** average distance from base
 
-## 🏆 Top Naval Suppliers (Real Companies)
+## 🏆 Top Suppliers by Category
 
+### Overall Excellence
 """
     
-    for i, (_, company) in enumerate(top_companies.iterrows(), 1):
+    for i, (_, company) in enumerate(top_overall.iterrows(), 1):
         report += f"""
-### {i}. {company['name']}
-- **Naval Relevance Score:** {company['total_score']:.1f}/100
-- **Location:** {company['location']} ({company['distance_miles']:.1f} miles)
-- **Size:** {company['size']}
-- **Website:** {company['website']}
-- **Phone:** {company['phone']}
-- **Rating:** {company['rating']:.1f}⭐ ({company['user_ratings_total']} reviews)
+**{i}. {company['name']}**
+- Total Score: {company['total_score']:.1f}
+- Microelectronics: {company['microelectronics_score']:.1f} | Naval: {company['naval_score']:.1f}
+- Location: {company['location']} ({company['distance_miles']:.1f} mi)
+"""
+    
+    if microelectronics_companies > 0:
+        report += f"""
 
+### Microelectronics Leaders
+"""
+        for i, (_, company) in enumerate(top_microelectronics.iterrows(), 1):
+            report += f"""
+**{i}. {company['name']}**
+- Microelectronics Score: {company['microelectronics_score']:.1f}
+- Capabilities: {', '.join(company['capabilities'][:3])}
+"""
+    
+    if naval_companies > 0:
+        report += f"""
+
+### Naval/Maritime Specialists
+"""
+        for i, (_, company) in enumerate(top_naval.iterrows(), 1):
+            report += f"""
+**{i}. {company['name']}**
+- Naval Score: {company['naval_score']:.1f}
+- Capabilities: {', '.join(company['capabilities'][:3])}
 """
     
     return report
 
 def main():
     st.set_page_config(
-        page_title="WBI Naval Search - Real Supplier Intelligence",
+        page_title="WBI Naval Search - Enhanced Supplier Intelligence",
         page_icon="⚓",
         layout="wide"
     )
     
-    # WBI Styling (same as before)
+    # Enhanced WBI Styling
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -618,7 +863,7 @@ def main():
     
     .metric-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1.5rem;
         margin: 2rem 0;
     }
@@ -627,7 +872,7 @@ def main():
         background: #2d3748;
         border-radius: 1rem;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        padding: 2rem;
+        padding: 1.5rem;
         border: 1px solid #4a5568;
         text-align: center;
         transition: transform 0.2s ease;
@@ -639,7 +884,7 @@ def main():
     }
     
     .metric-value {
-        font-size: 2.5rem;
+        font-size: 2rem;
         font-weight: 700;
         color: #ffffff !important;
         margin: 0;
@@ -647,12 +892,12 @@ def main():
     }
     
     .metric-label {
-        font-size: 0.875rem;
+        font-size: 0.75rem;
         color: #cbd5e0 !important;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin: 0.75rem 0 0 0;
+        margin: 0.5rem 0 0 0;
     }
     
     .stButton > button {
@@ -758,7 +1003,7 @@ def main():
             </div>
         </div>
         <h1>Naval Search Pro</h1>
-        <p>Real-time supplier intelligence using live Google Places API data for naval operations.</p>
+        <p>Advanced supplier intelligence and procurement analytics platform for naval operations.</p>
     </div>
     <div class="wbi-border"></div>
     """, unsafe_allow_html=True)
@@ -770,14 +1015,14 @@ def main():
         st.session_state.companies = []
     
     # Sidebar configuration
-    st.sidebar.header("🔧 Search Configuration")
+    st.sidebar.header("🔧 Enhanced Search Configuration")
     
     # API Key management
     if not GOOGLE_PLACES_API_KEY:
         st.sidebar.warning("⚠️ No API key detected")
         with st.sidebar.expander("🔑 API Key Setup", expanded=True):
             st.markdown("""
-            **Required for Real Search:**
+            **Required for Search:**
             1. Visit [Google Cloud Console](https://console.cloud.google.com)
             2. Enable **Places API (New)** + Billing
             3. Create API key and paste below:
@@ -785,13 +1030,13 @@ def main():
             api_key_input = st.sidebar.text_input(
                 "Google Places API Key:", 
                 type="password",
-                help="Required for real company search"
+                help="Required for company search"
             )
             if api_key_input:
                 st.session_state.api_key = api_key_input
                 st.sidebar.success("✅ API key configured!")
     else:
-        st.sidebar.success("✅ API key found - real search enabled")
+        st.sidebar.success("✅ API key found - enhanced search enabled")
     
     # Search configuration
     config = SearchConfig()
@@ -799,23 +1044,31 @@ def main():
     st.sidebar.subheader("📍 Search Location")
     
     preset_locations = {
-        "South Bend, Indiana": "South Bend, Indiana",
-        "Norfolk, Virginia": "Norfolk, Virginia",
-        "San Diego, California": "San Diego, California", 
-        "Pearl Harbor, Hawaii": "Pearl Harbor, Hawaii",
-        "Newport News, Virginia": "Newport News, Virginia",
-        "Bath, Maine": "Bath, Maine",
-        "Groton, Connecticut": "Groton, Connecticut"
+        "South Bend, Indiana (Naval Microelectronics Center)": "South Bend, Indiana",
+        "Norfolk, Virginia (Naval Station Norfolk)": "Norfolk, Virginia",
+        "San Diego, California (Naval Base San Diego)": "San Diego, California", 
+        "Pearl Harbor, Hawaii (Joint Base Pearl Harbor)": "Pearl Harbor, Hawaii",
+        "Newport News, Virginia (Newport News Shipbuilding)": "Newport News, Virginia",
+        "Bath, Maine (Bath Iron Works)": "Bath, Maine",
+        "Groton, Connecticut (Electric Boat)": "Groton, Connecticut"
     }
     
     selected_preset = st.sidebar.selectbox(
-        "Select naval location:",
+        "Select naval facility:",
         list(preset_locations.keys())
     )
     config.base_location = preset_locations[selected_preset]
     
-    config.radius_miles = st.sidebar.slider("Search Radius (miles)", 10, 100, 60)
-    config.target_company_count = st.sidebar.slider("Max Companies", 10, 200, 100)
+    config.radius_miles = st.sidebar.slider("Search Radius (miles)", 10, 150, 60)
+    config.target_company_count = st.sidebar.slider("Max Companies", 10, 300, 150)
+    
+    # Enhanced search options
+    st.sidebar.subheader("🎯 Enhanced Search Options")
+    config.search_multi_state = st.sidebar.checkbox(
+        "Multi-State Search", 
+        value=False,
+        help="Search across multiple states for broader coverage"
+    )
     
     # Main content
     col1, col2 = st.columns([2, 1])
@@ -823,22 +1076,17 @@ def main():
     with col2:
         st.markdown("""
         <div class="wbi-card">
-            <h3>🔍 Real Company Search</h3>
-            <p>Live Google Places API integration searches for actual manufacturing and naval companies - no fake data.</p>
+            <h3>🔍 Enhanced Search</h3>
+            <p>Advanced Google Places API integration with multi-category scoring for microelectronics, naval, and defense suppliers.</p>
             
             <div style="margin: 1.5rem 0;">
-                <h4>✅ Real Results</h4>
-                <p>Every company result comes directly from Google Places API with verified business information.</p>
-            </div>
-            
-            <div style="margin: 1.5rem 0;">
-                <h4>📊 Live Analytics</h4>
-                <p>Real-time scoring and analytics based on actual business data and customer reviews.</p>
+                <h4>🎯 Enhanced Scoring</h4>
+                <p>Microelectronics, naval, defense, manufacturing, and quality scoring for comprehensive evaluation.</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("🔍 Search Real Companies", type="primary"):
+        if st.button("🔍 Enhanced Search", type="primary"):
             # Clear previous results
             if 'companies' in st.session_state:
                 del st.session_state.companies
@@ -847,15 +1095,15 @@ def main():
     with col1:
         if st.session_state.get('search_triggered', False):
             if not st.session_state.get('companies'):
-                with st.spinner("Searching for real companies..."):
-                    searcher = RealNavalSearcher(config)
+                with st.spinner("Executing enhanced search with microelectronics focus..."):
+                    searcher = EnhancedNavalSearcher(config)
                     companies = searcher.search_companies()
                     st.session_state.companies = companies
                     st.session_state.searcher = searcher
                 
                 st.session_state.search_triggered = False
     
-    # Display results
+    # Display enhanced results
     if st.session_state.get('companies'):
         companies = st.session_state.companies
         
@@ -863,93 +1111,108 @@ def main():
             st.warning("No companies found. Try a different location or check your API key.")
         else:
             # Enhanced metrics dashboard
-            st.markdown("## 📊 Real Supplier Intelligence Dashboard")
+            st.markdown("## 📊 Enhanced Naval Intelligence Dashboard")
             metrics_html = create_enhanced_metrics_dashboard(companies)
             st.markdown(metrics_html, unsafe_allow_html=True)
             
-            # Tabs for different views
+            # Enhanced tabs
             tab1, tab2, tab3, tab4 = st.tabs([
-                "📋 Real Supplier Directory", 
-                "🗺️ Geographic View", 
-                "📊 Analytics", 
-                "📄 Export Data"
+                "📋 Enhanced Directory", 
+                "🗺️ Intelligence Map", 
+                "📊 Advanced Analytics", 
+                "📄 Enhanced Export"
             ])
             
             with tab1:
-                st.subheader("🏭 Real Naval Supplier Directory")
-                st.markdown("*Live data from Google Places API - all companies verified*")
+                st.subheader("🏭 Enhanced Naval Supplier Directory")
+                st.markdown("*Multi-category scoring: Microelectronics, Naval, Defense, Manufacturing*")
                 
-                # Filters
-                filter_col1, filter_col2, filter_col3 = st.columns(3)
+                # Enhanced filters
+                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
                 with filter_col1:
-                    min_score = st.slider("Min Relevance Score", 0, 20, 0)
+                    min_total_score = st.slider("Min Total Score", 0, 50, 10)
                 with filter_col2:
-                    size_filter = st.selectbox("Company Size", ["All", "Small Business", "Medium Business", "Large Corporation"])
+                    min_micro_score = st.slider("Min Microelectronics Score", 0, 30, 0)
                 with filter_col3:
-                    min_rating = st.slider("Min Rating", 0.0, 5.0, 0.0, 0.1)
+                    min_naval_score = st.slider("Min Naval Score", 0, 30, 0)
+                with filter_col4:
+                    size_filter = st.selectbox("Company Size", ["All", "Small Business", "Medium Business", "Large Corporation"])
                 
                 # Filter companies
                 filtered_companies = companies.copy()
-                if min_score > 0:
-                    filtered_companies = [c for c in filtered_companies if c['total_score'] >= min_score]
+                if min_total_score > 0:
+                    filtered_companies = [c for c in filtered_companies if c['total_score'] >= min_total_score]
+                if min_micro_score > 0:
+                    filtered_companies = [c for c in filtered_companies if c['microelectronics_score'] >= min_micro_score]
+                if min_naval_score > 0:
+                    filtered_companies = [c for c in filtered_companies if c['naval_score'] >= min_naval_score]
                 if size_filter != "All":
                     filtered_companies = [c for c in filtered_companies if c['size'] == size_filter]
-                if min_rating > 0:
-                    filtered_companies = [c for c in filtered_companies if c['rating'] >= min_rating]
                 
-                st.info(f"📊 Showing {len(filtered_companies)} real companies (filtered from {len(companies)} total)")
+                st.info(f"📊 Showing {len(filtered_companies)} companies (filtered from {len(companies)} total)")
                 
-                # Display companies
+                # Display companies with enhanced scoring
                 for company in filtered_companies:
-                    score_color = "🟢" if company['total_score'] >= 15 else "🟡" if company['total_score'] >= 8 else "🔴"
+                    # Enhanced score indicators
+                    if company['total_score'] >= 25:
+                        score_color = "🔥"
+                        score_desc = "Exceptional"
+                    elif company['total_score'] >= 15:
+                        score_color = "🟢"
+                        score_desc = "High Value"
+                    elif company['total_score'] >= 10:
+                        score_color = "🟡"
+                        score_desc = "Good Match"
+                    else:
+                        score_color = "🔴"
+                        score_desc = "Basic"
                     
-                    with st.expander(f"{score_color} {company['name']} - Score: {company['total_score']:.1f}"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("**📍 Real Business Information**")
+                    with st.expander(f"{score_color} {company['name']} - {score_desc} (Score: {company['total_score']:.1f})"):
+                        # Enhanced metric display
+                        metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
+                        with metric_col1:
+                            st.metric("Total Score", f"{company['total_score']:.1f}")
+                        with metric_col2:
+                            st.metric("Microelectronics", f"{company['microelectronics_score']:.1f}")
+                        with metric_col3:
+                            st.metric("Naval/Maritime", f"{company['naval_score']:.1f}")
+                        with metric_col4:
+                            st.metric("Defense", f"{company['defense_score']:.1f}")
+                        with metric_col5:
+                            st.metric("Manufacturing", f"{company['manufacturing_score']:.1f}")
+                        
+                        # Company details
+                        detail_col1, detail_col2 = st.columns(2)
+                        with detail_col1:
+                            st.markdown("**📍 Company Information**")
                             st.write(f"📍 {company['location']}")
                             st.write(f"🌐 {company['website']}")
                             st.write(f"📞 {company['phone']}")
                             st.write(f"🏢 Size: {company['size']}")
-                            st.write(f"🏭 Industry: {company['industry']}")
+                            st.write(f"📏 Distance: {company['distance_miles']:.1f} miles")
                         
-                        with col2:
-                            st.markdown("**🔧 Capabilities**")
+                        with detail_col2:
+                            st.markdown("**🔧 Enhanced Capabilities**")
                             for capability in company['capabilities']:
                                 st.write(f"• {capability}")
                             
-                            st.markdown("**⭐ Customer Reviews**")
+                            st.markdown("**⭐ Quality Metrics**")
                             st.write(f"Rating: {company['rating']:.1f}⭐ ({company['user_ratings_total']} reviews)")
-                            st.write(f"Distance: {company['distance_miles']:.1f} miles")
                         
                         st.markdown(f"**📋 Description:** {company['description']}")
-                        
-                        # Score breakdown
-                        st.markdown("**🎯 Relevance Analysis**")
-                        score_col1, score_col2, score_col3, score_col4, score_col5 = st.columns(5)
-                        with score_col1:
-                            st.metric("🏭 Manufacturing", f"{company['manufacturing_score']:.1f}")
-                        with score_col2:
-                            st.metric("🤖 Robotics", f"{company['robotics_score']:.1f}")
-                        with score_col3:
-                            st.metric("🚁 Unmanned", f"{company['unmanned_score']:.1f}")
-                        with score_col4:
-                            st.metric("👥 Workforce", f"{company['workforce_score']:.1f}")
-                        with score_col5:
-                            st.metric("🛡️ Defense", f"{company['defense_score']:.1f}")
             
             with tab2:
-                st.subheader("🗺️ Real Company Locations")
-                st.markdown("*Geographic distribution of verified companies*")
+                st.subheader("🗺️ Enhanced Intelligence Map")
+                st.markdown("*Geographic distribution with enhanced scoring visualization*")
                 
-                map_fig = create_company_map(companies, config.base_location)
+                map_fig = create_enhanced_company_map(companies, config.base_location)
                 if map_fig:
                     st.plotly_chart(map_fig, use_container_width=True)
                 else:
                     st.info("No valid coordinates available for mapping")
             
             with tab3:
-                st.subheader("📊 Real Data Analytics")
+                st.subheader("📊 Enhanced Analytics Dashboard")
                 
                 if companies:
                     df = pd.DataFrame(companies)
@@ -957,53 +1220,69 @@ def main():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # Score distribution
-                        fig_hist = px.histogram(df, x='total_score', title='Relevance Score Distribution')
+                        # Enhanced score distribution
+                        fig_hist = px.histogram(df, x='total_score', title='Enhanced Score Distribution', nbins=20)
                         st.plotly_chart(fig_hist, use_container_width=True)
                         
-                        # Size distribution
-                        size_counts = df['size'].value_counts()
-                        fig_pie = px.pie(values=size_counts.values, names=size_counts.index, 
-                                       title='Company Size Distribution')
-                        st.plotly_chart(fig_pie, use_container_width=True)
+                        # Microelectronics vs Naval scoring
+                        fig_scatter = px.scatter(df, x='microelectronics_score', y='naval_score', 
+                                               hover_name='name', title='Microelectronics vs Naval Scoring',
+                                               size='total_score')
+                        st.plotly_chart(fig_scatter, use_container_width=True)
                     
                     with col2:
-                        # Distance vs Score
-                        fig_scatter = px.scatter(df, x='distance_miles', y='total_score', 
-                                               hover_name='name', title='Distance vs Relevance Score')
-                        st.plotly_chart(fig_scatter, use_container_width=True)
+                        # Category scoring comparison
+                        score_categories = ['manufacturing_score', 'microelectronics_score', 'naval_score', 'defense_score']
+                        avg_scores = [df[cat].mean() for cat in score_categories]
+                        category_names = ['Manufacturing', 'Microelectronics', 'Naval', 'Defense']
                         
-                        # Rating distribution
-                        fig_rating = px.histogram(df, x='rating', title='Customer Rating Distribution')
-                        st.plotly_chart(fig_rating, use_container_width=True)
+                        fig_bar = px.bar(x=category_names, y=avg_scores, title='Average Scores by Category')
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                        
+                        # Top capabilities
+                        all_caps = []
+                        for caps in df['capabilities']:
+                            all_caps.extend(caps)
+                        if all_caps:
+                            cap_counts = pd.Series(all_caps).value_counts().head(10)
+                            fig_cap = px.bar(x=cap_counts.values, y=cap_counts.index, 
+                                           title='Top Capabilities', orientation='h')
+                            st.plotly_chart(fig_cap, use_container_width=True)
             
             with tab4:
-                st.subheader("📄 Export Real Company Data")
+                st.subheader("📄 Enhanced Data Export")
                 
                 if companies:
                     df = pd.DataFrame(companies)
                     
-                    # Create export DataFrame
+                    # Enhanced export DataFrame
                     export_df = df[['name', 'location', 'industry', 'size', 'total_score', 
-                                    'manufacturing_score', 'defense_score', 'distance_miles', 
-                                    'rating', 'user_ratings_total', 'website', 'phone']].copy()
+                                    'microelectronics_score', 'naval_score', 'defense_score', 
+                                    'manufacturing_score', 'distance_miles', 'rating', 
+                                    'user_ratings_total', 'website', 'phone']].copy()
                     
                     export_df.columns = ['Company Name', 'Location', 'Industry', 'Size', 
-                                        'Total Score', 'Manufacturing Score', 'Defense Score', 
-                                        'Distance (Miles)', 'Rating', 'Review Count', 'Website', 'Phone']
+                                        'Total Score', 'Microelectronics Score', 'Naval Score', 
+                                        'Defense Score', 'Manufacturing Score', 'Distance (Miles)', 
+                                        'Rating', 'Review Count', 'Website', 'Phone']
+                    
+                    # Add search metadata
+                    export_df['Search Location'] = config.base_location
+                    export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d")
+                    export_df['Enhanced Scoring'] = "Yes"
                     
                     csv = export_df.to_csv(index=False)
                     
                     st.download_button(
-                        label="📥 Download Real Company Data (CSV)",
+                        label="📥 Download Enhanced Company Data (CSV)",
                         data=csv,
-                        file_name=f"real_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        file_name=f"enhanced_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                         mime="text/csv"
                     )
                     
-                    # Executive report
-                    with st.expander("📋 Executive Report Preview"):
-                        exec_report = generate_executive_report(companies, config)
+                    # Enhanced executive report
+                    with st.expander("📋 Enhanced Executive Report Preview"):
+                        exec_report = generate_enhanced_executive_report(companies, config)
                         st.markdown(exec_report)
 
 if __name__ == "__main__":
