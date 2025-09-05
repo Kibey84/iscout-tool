@@ -1269,7 +1269,7 @@ def main():
 
                     # Round numeric columns to 1 decimal place for readability
                     numeric_columns = ['Distance (Miles)', 'Total Score', 'Microelectronics Score', 
-                                    'Naval Score', 'Defense Score', 'Manufacturing Score', 'Rating']
+                                       'Naval Score', 'Defense Score', 'Manufacturing Score', 'Rating']
                     for col in numeric_columns:
                         export_df[col] = export_df[col].round(1)
 
@@ -1280,14 +1280,45 @@ def main():
                     export_df['Search Location'] = config.base_location
                     export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d")
                     
+                    # Display enhanced dataframe with formatting
+                    st.subheader("📊 Enhanced Company Data Preview")
+
+                    # Configure column display with proper widths and formatting
+                    column_config = {
+                        "Company Name": st.column_config.TextColumn("🏭 Company Name", width="large"),
+                        "Location": st.column_config.TextColumn("📍 Location", width="medium"),
+                        "Distance (Miles)": st.column_config.NumberColumn("📏 Distance", format="%.1f mi"),
+                        "Company Size": st.column_config.TextColumn("🏢 Size", width="small"),
+                        "Industry": st.column_config.TextColumn("🏭 Industry", width="medium"),
+                        "Total Score": st.column_config.NumberColumn("🎯 Total Score", format="%.1f", help="Overall relevance score"),
+                        "Microelectronics Score": st.column_config.NumberColumn("🔬 Micro Score", format="%.1f"),
+                        "Naval Score": st.column_config.NumberColumn("⚓ Naval Score", format="%.1f"),
+                        "Defense Score": st.column_config.NumberColumn("🛡️ Defense Score", format="%.1f"),
+                        "Manufacturing Score": st.column_config.NumberColumn("🏭 Mfg Score", format="%.1f"),
+                        "Rating": st.column_config.NumberColumn("⭐ Rating", format="%.1f"),
+                        "Review Count": st.column_config.NumberColumn("📝 Reviews", format="%d"),
+                        "Phone": st.column_config.TextColumn("📞 Phone", width="medium"),
+                        "Website": st.column_config.LinkColumn("🌐 Website", width="medium")
+                    }
+
+                    # Display formatted dataframe
+                    st.dataframe(export_df, column_config=column_config, use_container_width=True, height=400)
+                    
+                    # Create CSV for download
                     csv = export_df.to_csv(index=False)
                     
-                    st.download_button(
-                        label="📥 Download Enhanced Company Data (CSV)",
-                        data=csv,
-                        file_name=f"enhanced_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
+                    # Download buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            label="📥 Download CSV (Plain Text)",
+                            data=csv,
+                            file_name=f"enhanced_naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        st.button("📊 Excel Export", help="Excel export coming soon", disabled=True)
                     
                     # Enhanced executive report
                     with st.expander("📋 Enhanced Executive Report Preview"):
