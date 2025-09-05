@@ -1255,21 +1255,30 @@ def main():
                 if companies:
                     df = pd.DataFrame(companies)
                     
-                    # Enhanced export DataFrame
-                    export_df = df[['name', 'location', 'industry', 'size', 'total_score', 
-                                    'microelectronics_score', 'naval_score', 'defense_score', 
-                                    'manufacturing_score', 'distance_miles', 'rating', 
-                                    'user_ratings_total', 'website', 'phone']].copy()
-                    
-                    export_df.columns = ['Company Name', 'Location', 'Industry', 'Size', 
+                    # Create clean export DataFrame with logical column order
+                    export_df = df[['name', 'location', 'distance_miles', 'size', 'industry', 
+                                    'total_score', 'microelectronics_score', 'naval_score', 
+                                    'defense_score', 'manufacturing_score', 'rating', 
+                                    'user_ratings_total', 'phone', 'website']].copy()
+
+                    # Clean column names
+                    export_df.columns = ['Company Name', 'Location', 'Distance (Miles)', 'Company Size', 'Industry',
                                         'Total Score', 'Microelectronics Score', 'Naval Score', 
-                                        'Defense Score', 'Manufacturing Score', 'Distance (Miles)', 
-                                        'Rating', 'Review Count', 'Website', 'Phone']
-                    
-                    # Add search metadata
+                                        'Defense Score', 'Manufacturing Score', 'Rating', 'Review Count', 
+                                        'Phone', 'Website']
+
+                    # Round numeric columns to 1 decimal place for readability
+                    numeric_columns = ['Distance (Miles)', 'Total Score', 'Microelectronics Score', 
+                                    'Naval Score', 'Defense Score', 'Manufacturing Score', 'Rating']
+                    for col in numeric_columns:
+                        export_df[col] = export_df[col].round(1)
+
+                    # Sort by Total Score (highest first)
+                    export_df = export_df.sort_values('Total Score', ascending=False)
+
+                    # Add search metadata at the end
                     export_df['Search Location'] = config.base_location
                     export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d")
-                    export_df['Enhanced Scoring'] = "Yes"
                     
                     csv = export_df.to_csv(index=False)
                     
