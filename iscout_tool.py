@@ -1,11 +1,10 @@
-# app.py  — Enhanced Naval Search (Option A: no cache_data) with UI polish, progress bar, and robust DataFrames
-
 import os
 import re
+import io
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import pandas as pd
 import requests
@@ -13,85 +12,52 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Optional: accurate distance if geopy is installed
+try:
+    from openpyxl import Workbook
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    from openpyxl.styles import Font, Alignment, PatternFill
+    OPENPYXL_AVAILABLE = True
+except Exception:
+    OPENPYXL_AVAILABLE = False
+
 try:
     from geopy.distance import geodesic
     GEOPY_AVAILABLE = True
 except Exception:
     GEOPY_AVAILABLE = False
 
-# -----------------------------
-# Config
-# -----------------------------
 st.set_page_config(page_title="WBI Naval Search - Enhanced Supplier Intelligence", page_icon="⚓", layout="wide")
 
-GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+GOOGLE_PLACES_API_KEY = (
+    st.secrets.get("GOOGLE_PLACES_API_KEY", "")
+    if hasattr(st, "secrets") and "GOOGLE_PLACES_API_KEY" in st.secrets
+    else os.environ.get("GOOGLE_PLACES_API_KEY", "")
+)
+
 HTTP_TIMEOUT = 15
-USER_AGENT = "WBI-Naval-Search/1.0"
-HEADERS_HTML = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
+UA = "WBI-Naval-Search/1.1"
+HTML_HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml"}
 
-# Corporate fallbacks for primes — only used if local POC isn’t discoverable
-CORPORATE_POC_FALLBACK = {
-    "lockheed": ["supplier.diversity@lockheedmartin.com"],
-    "northrop": ["ngc.suppliercontact@ngc.com"],
-    "raytheon": ["rmd.supplier@rtx.com", "ris.supplier@rtx.com"],
-    "general dynamics": ["gdit.procurement@gdit.com"],
-    "electric boat": ["supplierinfo@gdeb.com"],
-    "huntington ingalls": ["nnsuppliercompliance@hii-co.com"],
-    "bae systems": ["supplier.diversity@baesystems.com"],
-    "l3harris": ["supplier@l3harris.com"],
-    "boeing": ["supplier@boeing.com"],
-    "textron": ["supplychain@textron.com"],
-    "collins": ["supplier@collins.com"],
-}
-
-PRIME_BRANDS = [
-    "Lockheed Martin", "Northrop Grumman", "Raytheon", "General Dynamics", "BAE Systems",
-    "Huntington Ingalls", "L3Harris", "Boeing Defense", "Textron", "Collins Aerospace",
-    "Electric Boat", "Newport News Shipbuilding", "Bath Iron Works",
-]
-
-# -----------------------------
-# Styling (polished, minimal)
-# -----------------------------
+# --- Styling (compact, dark) ---
 st.markdown("""
 <style>
-/* Dark theme polish */
-.stApp { background: #0f172a; color: #e2e8f0; }
-header[data-testid="stHeader"] { display: none; }
-.stMainBlockContainer { padding-top: 0.5rem; }
-
-/* Hero header */
-.wbi-hero {
-  background: radial-gradient(1200px 600px at 10% -10%, rgba(37,99,235,.3), transparent),
-              linear-gradient(135deg,#0b1225 0%,#111827 70%);
-  padding: 28px 16px 16px;
-  border-bottom: 1px solid #1f2937;
-}
-.wbi-logo {
-  display: flex; align-items: center; justify-content: center; gap:.75rem;
-  color:#fff; font-weight:800; font-size: 36px; letter-spacing:.5px;
-}
-.wbi-sub { text-align:center; color:#94a3b8; margin-top:.25rem; }
-
-/* Cards & metrics */
-.wbi-card { background:#111827; border:1px solid #1f2937; border-radius:14px; padding:18px; }
-.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0}
-.metric-card{background:#0b1225;border:1px solid #1f2937;border-radius:12px;padding:14px;text-align:center}
-.metric-value{font-size:22px;font-weight:800;color:#fff;margin:0}
+.stApp{background:#0f172a;color:#e2e8f0}
+header[data-testid="stHeader"]{display:none}
+.wbi-hero{background:radial-gradient(1200px 600px at 10% -10%,rgba(37,99,235,.3),transparent),
+                      linear-gradient(135deg,#0b1225 0%,#111827 70%);padding:24px 12px 12px;border-bottom:1px solid #1f2937}
+.wbi-logo{display:flex;align-items:center;justify-content:center;gap:.6rem;color:#fff;font-weight:800;font-size:34px}
+.wbi-sub{color:#94a3b8;text-align:center;margin-top:.2rem}
+.wbi-card{background:#111827;border:1px solid #1f2937;border-radius:14px;padding:16px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0}
+.metric-card{background:#0b1225;border:1px solid #1f2937;border-radius:12px;padding:12px;text-align:center}
+.metric-value{font-size:21px;font-weight:800;color:#fff;margin:0}
 .metric-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin:4px 0 0}
-
-/* Tabs */
 .stTabs [data-baseweb="tab-list"]{border-bottom:1px solid #1f2937;background:#0b1225}
 .stTabs [data-baseweb="tab"]{color:#94a3b8;border:none;padding:10px 14px}
 .stTabs [data-baseweb="tab"][aria-selected="true"]{color:#fff;border-bottom:3px solid #2563eb;background:#0b1225}
-
-/* Buttons */
-.stButton > button{background:linear-gradient(135deg,#1e40af,#2563eb);color:#fff;border:none;border-radius:12px;
-  padding:10px 16px;font-weight:700;box-shadow:0 6px 24px rgba(37,99,235,.25)}
-.stButton > button:hover{filter:brightness(1.08); transform: translateY(-1px);}
-
-/* Expander */
+.stButton>button{background:linear-gradient(135deg,#1e40af,#2563eb);color:#fff;border:none;border-radius:12px;
+padding:10px 16px;font-weight:700;box-shadow:0 6px 24px rgba(37,99,235,.25)}
+.stButton>button:hover{filter:brightness(1.08); transform:translateY(-1px)}
 .streamlit-expanderHeader{background:#0b1225;border:1px solid #1f2937;border-radius:10px;color:#e2e8f0}
 .streamlit-expanderContent{background:#0f172a;border:1px solid #1f2937;border-top:none}
 </style>
@@ -104,59 +70,46 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# Scoring
-# -----------------------------
+# --- Primes & corporate fallbacks ---
+PRIME_BRANDS = [
+    # parent brands
+    "Lockheed Martin","Northrop Grumman","Raytheon","General Dynamics","BAE Systems",
+    "Huntington Ingalls","L3Harris","Boeing Defense","Textron","Collins Aerospace",
+    # key shipyards / divisions commonly branded standalone
+    "Electric Boat","Newport News Shipbuilding","Bath Iron Works",
+    # brand short forms we’ll search for
+    "LM RMS","RMS","Missiles and Defense","MDA","Mission Systems","Space Systems",
+]
+CORPORATE_POC_FALLBACK = {
+    "lockheed": ["supplier.diversity@lockheedmartin.com"],
+    "northrop": ["ngc.suppliercontact@ngc.com"],
+    "raytheon": ["rmd.supplier@rtx.com","ris.supplier@rtx.com"],
+    "general dynamics": ["gdit.procurement@gdit.com","supplierinfo@gdeb.com"],
+    "electric boat": ["supplierinfo@gdeb.com"],
+    "huntington ingalls": ["nnsuppliercompliance@hii-co.com"],
+    "bae systems": ["supplier.diversity@baesystems.com"],
+    "l3harris": ["supplier@l3harris.com"],
+    "boeing": ["supplier@boeing.com"],
+    "textron": ["supplychain@textron.com"],
+    "collins": ["supplier@collins.com"],
+}
+
+# --- Known hubs (gives us lat/lon for locationBias) ---
+HUBS = {
+    'south bend': (41.6764, -86.2520),
+    'norfolk': (36.8508, -76.2859),
+    'san diego': (32.7157, -117.1611),
+    'pearl harbor': (21.3099, -157.8581),
+    'newport news': (37.0871, -76.4730),
+    'bath': (43.9109, -69.8214),
+    'groton': (41.3501, -72.0979),
+}
+
 @dataclass
 class SearchConfig:
     base_location: str = "South Bend, Indiana"
     radius_miles: int = 60
-    target_company_count: int = 200
-
-    manufacturing_keywords: List[str] = field(default_factory=lambda: [
-        "advanced manufacturing", "precision machining", "metal fabrication",
-        "additive manufacturing", "3D printing", "CNC machining", "welding",
-        "assembly", "fabrication", "machining", "casting", "forging",
-        "sheet metal", "tool and die", "injection molding",
-        "shipbuilding", "naval shipyard", "marine engineering", "hull fabrication"
-    ])
-    microelectronics_keywords: List[str] = field(default_factory=lambda: [
-        "microelectronics", "semiconductor", "electronics manufacturing",
-        "PCB manufacturing", "printed circuit board", "IC design", "integrated circuits",
-        "electronic components", "naval electronics", "maritime electronics",
-        "avionics", "radar systems", "sonar electronics", "navigation electronics",
-        "communication systems", "electronic warfare", "signal processing",
-        "embedded systems", "microprocessors", "FPGA", "analog circuits",
-        "digital circuits", "RF electronics"
-    ])
-    robotics_keywords: List[str] = field(default_factory=lambda: [
-        "robotics", "automation", "robotic welding", "industrial automation",
-        "automated inspection", "robotics integration", "FANUC", "KUKA",
-        "automated systems", "robotic systems", "collaborative robots",
-        "AGV", "automated guided vehicles", "vision systems"
-    ])
-    unmanned_keywords: List[str] = field(default_factory=lambda: [
-        "unmanned systems", "autonomous", "UAV", "UUV", "USV",
-        "drone", "autonomous vehicles", "unmanned vehicles",
-        "remote systems", "autonomous systems", "ROV", "AUV",
-        "unmanned ground vehicles", "swarm robotics", "underwater drones",
-        "maritime autonomous", "naval drones"
-    ])
-    workforce_keywords: List[str] = field(default_factory=lambda: [
-        "naval training", "maritime training", "shipyard training", "welding certification",
-        "maritime academy", "technical training", "apprenticeship", "workforce development",
-        "skills training", "industrial training", "safety training", "crane operator training",
-        "maritime safety", "naval education", "defense training", "military training",
-        "shipbuilding training", "marine engineering training", "technical certification",
-        "OSHA training", "maritime simulation", "deck officer training",
-        "electronics training", "microelectronics training", "semiconductor training"
-    ])
-    defense_keywords: List[str] = field(default_factory=lambda: [
-        "defense contractor", "military contractor", "naval contractor",
-        "aerospace defense", "prime contractor", "subcontractor",
-        "DFARS", "ITAR", "security clearance", "classified work",
-        "government contracting", "GSA schedule"
-    ])
+    target_company_count: int = 250
 
 MICROELECTRONICS_WEIGHTS = {
     "microelectronics": 25, "semiconductor": 20, "pcb manufacturing": 18,
@@ -171,7 +124,7 @@ NAVAL_WEIGHTS = {
     "shipbuilding": 25, "naval shipyard": 28, "hull fabrication": 20,
     "marine engineering": 18, "submarine": 25, "naval systems": 22,
     "maritime": 15, "shipyard": 20, "vessel": 12, "marine": 12,
-    "navy": 20, "naval": 18, "coast guard": 16
+    "navy": 20, "naval": 18, "coast guard": 16, "dry dock": 22, "ship repair": 20, "dockyard": 16
 }
 MANUFACTURING_WEIGHTS = {
     'precision machining': 12, 'cnc machining': 10, 'metal fabrication': 8,
@@ -181,269 +134,246 @@ MANUFACTURING_WEIGHTS = {
 DEFENSE_WEIGHTS = {'defense contractor': 15, 'military contractor': 12, 'aerospace': 10,
                     'defense systems': 12, 'military systems': 10, 'government contracting': 8}
 ROBOTICS_WEIGHTS = {'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8}
-UNMANNED_WEIGHTS = {'uav': 10, 'uuv': 10, 'usv': 10, 'autonomous': 8, 'drone': 8, 'rov': 8, 'auv': 8}
-WORKFORCE_WEIGHTS = {'training': 6, 'academy': 6, 'certification': 5, 'apprenticeship': 5, 'workforce': 4}
 
-# -----------------------------
-# Searcher
-# -----------------------------
 class EnhancedNavalSearcher:
     def __init__(self, config: SearchConfig):
         self.config = config
+        self.base_lat, self.base_lon = self._base_coords(config.base_location)
 
-    # ------- geometry -------
-    def _distance_miles_from_base(self, lat: float, lon: float) -> float:
-        bases = {
-            'south bend': (41.6764, -86.2520), 'norfolk': (36.8508, -76.2859),
-            'san diego': (32.7157, -117.1611), 'pearl harbor': (21.3099, -157.8581),
-            'newport news': (37.0871, -76.4730), 'bath': (43.9109, -69.8214),
-            'groton': (41.3501, -72.0979)
-        }
-        base_lat, base_lon = 41.6764, -86.2520
-        for key, coords in bases.items():
-            if key in self.config.base_location.lower():
-                base_lat, base_lon = coords
-                break
+    def _base_coords(self, base_location: str) -> Tuple[float, float]:
+        for key, coords in HUBS.items():
+            if key in base_location.lower():
+                return coords
+        # fallback: approximate South Bend
+        return HUBS['south bend']
+
+    def _miles(self, lat: float, lon: float) -> float:
         if not lat or not lon:
             return 999.0
         if GEOPY_AVAILABLE:
-            return round(geodesic((base_lat, base_lon), (lat, lon)).miles, 1)
-        # fallback
-        lat_diff = abs(lat - base_lat); lon_diff = abs(lon - base_lon)
-        return round(((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 69, 1)
+            return round(geodesic((self.base_lat, self.base_lon), (lat, lon)).miles, 1)
+        # simple fallback
+        lat_diff = abs(lat - self.base_lat)
+        lon_diff = abs(lon - self.base_lon)
+        return round(((lat_diff**2 + lon_diff**2) ** 0.5) * 69, 1)
 
-    # ------- relevance / scoring -------
-    def _is_relevant(self, name: str, types: List[str], query: str) -> bool:
-        name_lower = name.lower()
-        types_str = " ".join(types).lower()
-        combined = f"{name_lower} {types_str} {query.lower()}"
+    # -------- Google Places (Text Search + locationBias) --------
+    def _places_text(self, query: str, api_key: str) -> List[Dict]:
+        url = "https://places.googleapis.com/v1/places:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+            "X-Goog-FieldMask": ("places.displayName,places.formattedAddress,places.location,places.types,"
+                                 "places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus")
+        }
+        radius_m = int(self.config.radius_miles * 1609.34)
+        body = {
+            "textQuery": query,
+            "maxResultCount": 20,
+            "locationBias": {
+                "circle": {
+                    "center": {"latitude": self.base_lat, "longitude": self.base_lon},
+                    "radius": radius_m
+                }
+            }
+        }
+        out: List[Dict] = []
+        page = 0
+        while True:
+            try:
+                resp = requests.post(url, headers=headers, json=body, timeout=HTTP_TIMEOUT)
+                data = resp.json() if resp.ok else {}
+            except Exception:
+                data = {}
+            places = data.get("places", []) or []
+            out.extend(self._process_places(places, query))
+            token = data.get("nextPageToken") or data.get("next_page_token")
+            if not token or page >= 2:
+                break
+            page += 1
+            time.sleep(0.6)
+            body["pageToken"] = token
+        return out
 
-        hard_exclude = [
-            'restaurant', 'food', 'catering', 'retail', 'store', 'bank', 'insurance',
-            'real estate', 'hospital', 'hotel', 'gas station', 'pharmacy',
-            'auto repair', 'automotive repair', 'hair salon', 'nail salon', 'spa',
-            'cleaning services', 'janitorial', 'landscaping', 'roofing', 'flooring',
-            'residential construction', 'home improvement', 'interior design'
+    # broaden naval / water-adjacent queries
+    def _domain_queries(self, base: str) -> List[str]:
+        return [
+            # microelectronics
+            f"microelectronics manufacturing near {base}",
+            f"semiconductor companies near {base}",
+            f"electronics manufacturing near {base}",
+            f"PCB manufacturing near {base}",
+            f"naval electronics near {base}", f"radar systems near {base}", f"sonar electronics near {base}",
+            # naval / water adjacencies
+            f"shipbuilding company near {base}", f"ship repair near {base}", f"dry dock near {base}",
+            f"marine engineering near {base}", f"naval architecture near {base}", f"hull fabrication near {base}",
+            f"shipyard services near {base}", f"coast guard support near {base}", f"port services near {base}",
+            # defense mfg
+            f"defense contractor manufacturing near {base}", f"aerospace manufacturing near {base}",
+            f"military equipment manufacturer near {base}", f"naval systems manufacturer near {base}",
+            # core mfg
+            f"CNC machining services near {base}", f"precision machining near {base}",
+            f"metal fabrication shop near {base}", f"contract manufacturing near {base}",
+            f"additive manufacturing near {base}",
+            # automation
+            f"robotics manufacturer near {base}", f"automation systems near {base}",
+            f"control systems manufacturer near {base}",
+            # training
+            f"maritime training facility near {base}", f"welding school near {base}",
+            f"technical training institute near {base}", f"electronics training near {base}",
         ]
-        if any(ex in combined for ex in hard_exclude):
-            return False
 
-        indicators = [
-            'manufacturing', 'machining', 'fabrication', 'welding', 'casting', 'forging', 'cnc',
-            'precision', 'metal', 'assembly', 'production', 'shipyard', 'shipbuilding',
-            'marine', 'naval', 'maritime', 'submarine', 'vessel', 'electronics', 'microelectronics',
-            'semiconductor', 'pcb', 'circuits', 'radar', 'sonar', 'aerospace', 'defense contractor',
-            'military contractor', 'avionics', 'defense systems', 'robotics', 'automation',
-            'controls', 'systems integration', 'maritime academy', 'naval training',
-            'shipyard training', 'welding certification', 'supplier', 'office'
+    def _prime_queries(self, base: str) -> List[str]:
+        # search brand + office/site + procurement-ish
+        q: List[str] = []
+        variants = [
+            "office", "supplier office", "supplier diversity", "business development",
+            "contracts", "subcontracts", "procurement", "program office"
         ]
-        return any(ind in combined for ind in indicators)
+        for brand in PRIME_BRANDS:
+            for v in variants:
+                q.append(f"{brand} {v} near {base}")
+            # pure brand search (office/facility)
+            q.append(f"{brand} facility near {base}")
+            q.append(f"{brand} site near {base}")
+        return q
 
-    def _business_size(self, name: str, place: Dict) -> str:
-        name_lower = name.lower()
-        reviews = place.get('userRatingCount', 0)
-        rating = place.get('rating', 0)
-        majors = ['honeywell','boeing','lockheed','lockheed martin','raytheon','northrop','general dynamics',
-                  'bae systems','textron','collins','pratt','rolls','huntington ingalls',
-                  'newport news shipbuilding','bath iron works','electric boat','l3harris','intel','texas instruments']
-        if any(m in name_lower for m in majors):
+    def _is_prime_office(self, name: str) -> bool:
+        n = name.lower()
+        return any(b.lower() in n for b in PRIME_BRANDS)
+
+    def _process_places(self, places: List[Dict], query: str) -> List[Dict]:
+        items: List[Dict] = []
+        for p in places:
+            try:
+                name = p.get("displayName", {}).get("text", "Unknown")
+                types = p.get("types", []) or []
+                lat = p.get("location", {}).get("latitude", 0.0)
+                lon = p.get("location", {}).get("longitude", 0.0)
+                dist = self._miles(lat, lon)
+
+                if dist > self.config.radius_miles:
+                    continue  # keep results truly local
+
+                industry = ", ".join(types[:3]) if types else "Manufacturing/Office"
+                description = self._desc_from_query(types, query)
+
+                c = dict(
+                    name=name, location=p.get("formattedAddress", "Unknown"), industry=industry,
+                    description=description, size=self._size_from_place(name, p),
+                    capabilities=self._caps_from_text(name, types, query),
+                    lat=lat, lon=lon, website=p.get("websiteUri", "Not available"),
+                    phone=p.get("nationalPhoneNumber", "Not available"),
+                    rating=p.get("rating", 0.0), user_ratings_total=p.get("userRatingCount", 0),
+                    distance_miles=dist, is_prime_office=self._is_prime_office(name)
+                )
+                c.update(self._score(c))
+                items.append(self._normalize(c))
+            except Exception:
+                continue
+        return items
+
+    def _desc_from_query(self, types: List[str], query: str) -> str:
+        base = f"Type: {', '.join(types[:2]) if types else 'Manufacturing/Office'}"
+        q = query.lower()
+        if any(x in q for x in ["microelectronics","semiconductor"]): base += " · Microelectronics/Semiconductor"
+        if "electronics" in q: base += " · Electronics"
+        if any(x in q for x in ["naval","marine","ship","shipyard","dry dock","coast guard","port"]): base += " · Naval/Maritime"
+        if any(x in q for x in ["aerospace","defense"]): base += " · Aerospace/Defense"
+        if any(x in q for x in ["automation","robotics"]): base += " · Automation/Robotics"
+        if "office" in q: base += " · Prime Contractor Office"
+        return base
+
+    def _size_from_place(self, name: str, p: Dict) -> str:
+        name_l = name.lower()
+        reviews = p.get("userRatingCount", 0); rating = p.get("rating", 0.0)
+        majors = ["honeywell","boeing","lockheed","raytheon","northrop","general dynamics","bae systems",
+                  "textron","collins","huntington ingalls","electric boat","newport news shipbuilding",
+                  "bath iron works","l3harris","intel","texas instruments"]
+        if any(m in name_l for m in majors):
             return "Fortune 500 / Major Corporation"
         if reviews > 200 or (reviews > 100 and rating > 4.0): return "Large Corporation"
         if reviews > 50 or (reviews > 25 and rating > 4.2):  return "Medium Business"
         if reviews > 10:                                     return "Small-Medium Business"
         return "Small Business"
 
-    def _capabilities(self, name: str, types: List[str]) -> List[str]:
-        name_lower = name.lower(); types_str = " ".join(types).lower()
-        combined = f"{name_lower} {types_str}"
-        out = set()
+    def _caps_from_text(self, name: str, types: List[str], query: str) -> List[str]:
+        txt = " ".join([name.lower(), " ".join(types).lower(), query.lower()])
+        caps = set()
         mapping = {
-            'cnc':'CNC Machining','machining':'Precision Machining','welding':'Welding Services',
-            'fabrication':'Metal Fabrication','manufacturing':'Manufacturing','casting':'Metal Casting',
-            'forging':'Metal Forging','sheet metal':'Sheet Metal Work','additive':'3D Printing/Additive Manufacturing',
-            '3d printing':'3D Printing/Additive Manufacturing','microelectronics':'Microelectronics Manufacturing',
-            'semiconductor':'Semiconductor Design/Fab','pcb':'PCB Manufacturing','electronics':'Electronics Manufacturing',
-            'electronic components':'Electronic Components','circuits':'Circuit Design/Manufacturing',
-            'radar':'Radar Systems','sonar':'Sonar Systems','avionics':'Avionics Systems',
-            'automation':'Industrial Automation','robotics':'Robotics Integration','robotic':'Robotic Systems',
-            'vision':'Machine Vision Systems','control':'Process Control Systems',
-            'shipyard':'Shipbuilding','shipbuilding':'Shipbuilding','marine':'Marine Engineering',
-            'naval':'Naval Systems','maritime':'Maritime Systems','submarine':'Submarine Systems',
-            'hull':'Hull Fabrication','aerospace':'Aerospace Manufacturing','defense':'Defense Systems',
-            'military':'Military Systems','training':'Training Services','academy':'Educational Academy',
-            'certification':'Certification Programs','apprenticeship':'Apprenticeship Programs','office':'Prime Contractor Office'
+            # naval/water
+            "ship repair":"Ship Repair","dry dock":"Dry Dock","dockyard":"Dockyard",
+            "shipbuilding":"Shipbuilding","shipyard":"Shipyard","marine":"Marine Engineering",
+            "naval":"Naval Systems","maritime":"Maritime Systems","coast guard":"Coast Guard Support",
+            # microelectronics
+            "microelectronics":"Microelectronics Manufacturing","semiconductor":"Semiconductor Design/Fab",
+            "pcb":"PCB Manufacturing","electronics":"Electronics Manufacturing","radar":"Radar Systems",
+            "sonar":"Sonar Systems","avionics":"Avionics Systems",
+            # mfg
+            "cnc":"CNC Machining","machining":"Precision Machining","welding":"Welding Services",
+            "fabrication":"Metal Fabrication","casting":"Metal Casting","forging":"Metal Forging",
+            "additive":"3D Printing/Additive Manufacturing",
+            # automation
+            "automation":"Industrial Automation","robotics":"Robotics Integration",
+            # prime office
+            "office":"Prime Contractor Office"
         }
-        for k, v in mapping.items():
-            if k in combined: out.add(v)
-        return list(out) if out else ["General Manufacturing"]
+        for k,v in mapping.items():
+            if k in txt: caps.add(v)
+        return list(caps) or ["General Manufacturing"]
 
     def _score(self, c: Dict) -> Dict:
-        name = c['name'].lower()
-        industry = c['industry'].lower()
-        description = c['description'].lower()
-        caps = ' '.join(c['capabilities']).lower()
-        combined = f"{name} {industry} {description} {caps}"
-        s = dict(manufacturing_score=0.0, microelectronics_score=0.0, robotics_score=0.0,
-                 unmanned_score=0.0, workforce_score=0.0, defense_score=0.0, naval_score=0.0, total_score=0.0)
-        for k, w in MICROELECTRONICS_WEIGHTS.items():
-            if k in combined: s['microelectronics_score'] += w
-        for k, w in NAVAL_WEIGHTS.items():
-            if k in combined: s['naval_score'] += w
-        for k, w in MANUFACTURING_WEIGHTS.items():
-            if k in combined: s['manufacturing_score'] += w
-        for k, w in DEFENSE_WEIGHTS.items():
-            if k in combined: s['defense_score'] += w
-        for k, w in ROBOTICS_WEIGHTS.items():
-            if k in combined: s['robotics_score'] += w
-        for k, w in UNMANNED_WEIGHTS.items():
-            if k in combined: s['unmanned_score'] += w
-        for k, w in WORKFORCE_WEIGHTS.items():
-            if k in combined: s['workforce_score'] += w
-        rating = c.get('rating', 0); reviews = c.get('user_ratings_total', 0)
+        combined = " ".join([
+            c["name"].lower(), c["industry"].lower(), c["description"].lower(),
+            " ".join([x.lower() for x in c.get("capabilities", [])])
+        ])
+        s = dict(manufacturing_score=0.0, microelectronics_score=0.0, naval_score=0.0,
+                 defense_score=0.0, robotics_score=0.0, total_score=0.0)
+        for k,w in MICROELECTRONICS_WEIGHTS.items():
+            if k in combined: s["microelectronics_score"] += w
+        for k,w in NAVAL_WEIGHTS.items():
+            if k in combined: s["naval_score"] += w
+        for k,w in MANUFACTURING_WEIGHTS.items():
+            if k in combined: s["manufacturing_score"] += w
+        for k,w in DEFENSE_WEIGHTS.items():
+            if k in combined: s["defense_score"] += w
+        for k,w in ROBOTICS_WEIGHTS.items():
+            if k in combined: s["robotics_score"] += w
+        rating = c.get("rating",0); reviews = c.get("user_ratings_total",0)
         quality = 5 if (rating >= 4.5 and reviews >= 10) else 3 if (rating >= 4.0 and reviews >= 5) else 0
-        s['total_score'] = (s['manufacturing_score'] * 1.0 + s['microelectronics_score'] * 2.0 +
-                            s['naval_score'] * 1.5 + s['defense_score'] * 1.2 + s['robotics_score'] * 0.8 +
-                            s['unmanned_score'] * 0.9 + s['workforce_score'] * 0.7 + quality)
+        s["total_score"] = (s["manufacturing_score"]*1.0 + s["microelectronics_score"]*2.0 +
+                            s["naval_score"]*1.5 + s["defense_score"]*1.2 + s["robotics_score"]*0.8 + quality)
         return s
 
-    # ------- Google Places -------
-    def _places_search(self, body: Dict, headers: Dict) -> Dict:
-        url = "https://places.googleapis.com/v1/places:searchText"
-        try:
-            r = requests.post(url, headers=headers, json=body, timeout=HTTP_TIMEOUT)
-            r.raise_for_status()
-            return r.json()
-        except Exception:
-            return {}
-
-    def _search_google_places(self, query: str, api_key: str) -> List[Dict]:
-        headers = {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': api_key,
-            'X-Goog-FieldMask': ('places.displayName,places.formattedAddress,places.location,places.types,'
-                                 'places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,'
-                                 'places.businessStatus')
+    def _normalize(self, c: Dict) -> Dict:
+        # ensure all keys for later DataFrames
+        defaults = {
+            'name':'Unknown','location':'Unknown','distance_miles':999.0,'size':'Small Business',
+            'industry':'Manufacturing/Office','total_score':0.0,'microelectronics_score':0.0,
+            'naval_score':0.0,'defense_score':0.0,'manufacturing_score':0.0,'robotics_score':0.0,
+            'rating':0.0,'user_ratings_total':0,'phone':'Not available','website':'Not available',
+            'is_prime_office':False,'capabilities':[],'lat':0.0,'lon':0.0,
+            'poc_emails':[],'poc_emails_backup':[],'poc_contacts':[]
         }
-        all_hits: List[Dict] = []
-        body = {"textQuery": query, "maxResultCount": 20}
-        page = 0
-        while True:
-            data = self._places_search(body, headers)
-            places = data.get('places', []) or []
-            all_hits.extend(self._process_places(places, query))
-            next_token = data.get('nextPageToken') or data.get('next_page_token')
-            if not next_token or page >= 2:
-                break
-            page += 1
-            time.sleep(0.6)
-            body["pageToken"] = next_token
-        return all_hits
+        for k,v in defaults.items():
+            c.setdefault(k,v)
+        if not isinstance(c["capabilities"], list): c["capabilities"] = [str(c["capabilities"])]
+        return c
 
-    def _process_places(self, places: List[Dict], query: str) -> List[Dict]:
-        out = []
-        for p in places:
-            try:
-                name = p.get('displayName', {}).get('text', 'Unknown')
-                types = p.get('types', []) or []
-                if not self._is_relevant(name, types, query):
-                    continue
-                lat = p.get('location', {}).get('latitude', 0.0)
-                lon = p.get('location', {}).get('longitude', 0.0)
-                dist = self._distance_miles_from_base(lat, lon)
-                c = dict(
-                    name=name,
-                    location=p.get('formattedAddress', 'Unknown'),
-                    industry=', '.join(types[:3]) if types else 'Manufacturing/Office',
-                    description=self._desc_from_query(name, types, query),
-                    size=self._business_size(name, p),
-                    capabilities=self._capabilities(name, types),
-                    lat=lat, lon=lon, website=p.get('websiteUri', 'Not available'),
-                    phone=p.get('nationalPhoneNumber', 'Not available'),
-                    rating=p.get('rating', 0), user_ratings_total=p.get('userRatingCount', 0),
-                    types=types, distance_miles=dist,
-                    is_prime_office=self._is_prime_office(name)
-                )
-                out.append(c)
-            except Exception:
-                continue
-        return out
-
-    def _desc_from_query(self, name: str, types: List[str], query: str) -> str:
-        base = f"Type: {', '.join(types[:2]) if types else 'Manufacturing/Office'}"
-        q = query.lower()
-        if 'microelectronics' in q or 'semiconductor' in q: base += " · Microelectronics/Semiconductor"
-        elif 'electronics' in q: base += " · Electronics"
-        if 'naval' in q or 'marine' in q: base += " · Naval/Maritime"
-        if 'aerospace' in q or 'defense' in q: base += " · Aerospace/Defense"
-        if 'shipbuilding' in q or 'shipyard' in q: base += " · Shipbuilding"
-        if 'automation' in q or 'robotics' in q: base += " · Automation/Robotics"
-        if 'office' in q: base += " · Prime Contractor Office"
-        return base
-
-    def _is_prime_office(self, name: str) -> bool:
-        n = name.lower()
-        return any(b.lower() in n for b in PRIME_BRANDS)
-
-    # ------- Build queries -------
-    def _domain_queries(self, base_location: str) -> List[str]:
-        return [
-            f"microelectronics manufacturing near {base_location}",
-            f"semiconductor companies near {base_location}",
-            f"electronics manufacturing near {base_location}",
-            f"PCB manufacturing near {base_location}",
-            f"naval electronics near {base_location}",
-            f"radar systems near {base_location}",
-            f"sonar electronics near {base_location}",
-            f"electronic components near {base_location}",
-            f"shipbuilding company near {base_location}",
-            f"marine engineering near {base_location}",
-            f"naval architecture near {base_location}",
-            f"hull fabrication near {base_location}",
-            f"shipyard services near {base_location}",
-            f"submarine systems near {base_location}",
-            f"defense contractor manufacturing near {base_location}",
-            f"aerospace manufacturing near {base_location}",
-            f"military equipment manufacturer near {base_location}",
-            f"naval systems manufacturer near {base_location}",
-            f"CNC machining services near {base_location}",
-            f"precision machining near {base_location}",
-            f"metal fabrication shop near {base_location}",
-            f"custom manufacturing near {base_location}",
-            f"contract manufacturing near {base_location}",
-            f"welding fabrication near {base_location}",
-            f"additive manufacturing near {base_location}",
-            f"robotics manufacturer near {base_location}",
-            f"automation systems near {base_location}",
-            f"control systems manufacturer near {base_location}",
-            f"maritime training facility near {base_location}",
-            f"welding school near {base_location}",
-            f"technical training institute near {base_location}",
-            f"electronics training near {base_location}",
-        ]
-
-    def _prime_queries(self, base_location: str) -> List[str]:
-        q = []
-        for brand in PRIME_BRANDS:
-            q += [
-                f"{brand} office near {base_location}",
-                f"{brand} facility near {base_location}",
-                f"{brand} supplier office near {base_location}",
-            ]
-        return q
-
-    # ------- POC enrichment -------
+    # --- POC enrichment with names/titles (lightweight HTML scraping) ---
     def _fetch_html(self, url: str) -> str:
         try:
-            r = requests.get(url, headers=HEADERS_HTML, timeout=HTTP_TIMEOUT)
-            if r.status_code == 200 and "text" in r.headers.get("Content-Type", ""):
+            r = requests.get(url, headers=HTML_HEADERS, timeout=HTTP_TIMEOUT)
+            ct = r.headers.get("Content-Type", "").lower()
+            if r.ok and ("text/html" in ct or ct.startswith("text/")):
                 return r.text
         except Exception:
             pass
         return ""
 
-    def _contact_paths(self, base_url: str) -> List[str]:
-        paths = ["", "/contact", "/contact-us", "/contacts", "/suppliers", "/supply-chain",
-                 "/supplier", "/doing-business", "/about/contact"]
+    def _candidate_paths(self, base_url: str) -> List[str]:
+        paths = ["", "/contact", "/contact-us", "/contacts", "/suppliers", "/supplier",
+                 "/supply-chain", "/doing-business", "/team", "/leadership", "/about/contact"]
         out = []
         for p in paths:
             if base_url.endswith("/") and p.startswith("/"):
@@ -452,234 +382,277 @@ class EnhancedNavalSearcher:
                 out.append(base_url + "/" + p)
             else:
                 out.append(base_url + p)
-        return list(dict.fromkeys(out))
+        # unique preserve order
+        seen=set(); uniq=[]
+        for u in out:
+            if u not in seen:
+                seen.add(u); uniq.append(u)
+        return uniq
 
     def _extract_emails(self, html: str) -> List[str]:
-        raw = set(re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', html, flags=re.IGNORECASE))
-        junk = {"example.com", "email.com", "domain.com"}
-        return sorted(e for e in raw if not any(j in e.lower() for j in junk))
+        raw = set(re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', html, flags=re.I))
+        junk = {"example.com","email.com","domain.com"}
+        return sorted([e for e in raw if not any(j in e.lower() for j in junk)])
 
-    def _brand_key(self, name_or_text: str) -> Optional[str]:
-        n = (name_or_text or "").lower()
+    def _extract_phones(self, html: str) -> List[str]:
+        # basic +1 (xxx) xxx-xxxx or xxx-xxx-xxxx
+        phones = set(re.findall(r'(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', html))
+        return sorted([p[0] if isinstance(p, tuple) else p for p in phones])
+
+    def _extract_names_titles_near(self, html: str, anchors: List[str]) -> List[Dict]:
+        contacts = []
+        for a in anchors:
+            # find the anchor, take a window around it
+            for m in re.finditer(re.escape(a), html, flags=re.I):
+                start = max(0, m.start()-400)
+                end   = min(len(html), m.end()+400)
+                window = html[start:end]
+                # crude name/title patterns
+                # Name: words with capitals, Title keywords
+                name_m = re.findall(r'([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,2})', window)
+                title_m = re.findall(r'(Business Development|Supplier Diversity|Subcontracts|Procurement|Contracts|Supply Chain|Program Manager|Capture|BD)', window, flags=re.I)
+                name = None
+                for n in name_m:
+                    if len(n.split())<=3 and not any(k in n.lower() for k in ['contact','email','phone','support','website']):
+                        name = n; break
+                title = title_m[0] if title_m else None
+                if name or title:
+                    contacts.append({"name": name, "title": title, "anchor": a})
+        # de-dup
+        seen=set(); uniq=[]
+        for c in contacts:
+            key=(c.get("name"), c.get("title"))
+            if key in seen: continue
+            seen.add(key); uniq.append(c)
+        return uniq[:3]
+
+    def _brand_key(self, text: str) -> Optional[str]:
+        t=(text or "").lower()
         for k in CORPORATE_POC_FALLBACK.keys():
-            if k in n:
-                return k
+            if k in t: return k
         for b in [x.lower() for x in PRIME_BRANDS]:
-            if b.split()[0] in n:
-                return b
+            if b.split()[0] in t: return b
         return None
 
-    def enrich_poc_for_prime(self, c: Dict) -> Dict:
-        poc_primary: List[str] = []
-        poc_backup: List[str] = []
-        site = c.get("website", "")
-        if site and site.startswith("http"):
-            for url in self._contact_paths(site):
-                html = self._fetch_html(url)
-                if not html:
-                    continue
-                emails = self._extract_emails(html)
-                if emails:
-                    # prefer supplier/procurement/business dev hints
-                    pri = [e for e in emails if any(k in e.lower() for k in
-                         ["supplier","procure","purchas","subcontract","bd","business","development","supplychain","supply"])]
-                    if pri:
-                        poc_primary.extend(pri)
-                    else:
-                        poc_backup.extend(emails)
-                if len(poc_primary) >= 2:
-                    break
+    def enrich_primes_with_pocs(self, results: List[Dict]) -> None:
+        primes = [r for r in results if r.get("is_prime_office")]
+        for r in primes:
+            site = r.get("website","")
+            primary_emails: List[str] = []
+            backup_emails: List[str]  = []
+            contacts: List[Dict] = []
+            if site and site.startswith("http"):
+                for url in self._candidate_paths(site):
+                    html = self._fetch_html(url)
+                    if not html: continue
+                    found_emails = self._extract_emails(html)
+                    found_phones = self._extract_phones(html)
+                    # prioritize supplier/procurement/BD mailboxes
+                    pri = [e for e in found_emails if any(k in e.lower() for k in
+                          ["supplier","procure","purchas","subcontract","bd","business","development","supplychain","supply"])]
+                    if pri: primary_emails.extend(pri)
+                    else:   backup_emails.extend(found_emails)
+                    # names/titles near emails or "supplier"/"business development" phrases
+                    anchors = pri or ["supplier","business development","subcontracts","procurement","contracts","supply chain"]
+                    contacts.extend(self._extract_names_titles_near(html, anchors))
+                    if len(primary_emails)>=2 and contacts: break
 
-        if not poc_primary:
-            brand = self._brand_key(c.get("name","")) or self._brand_key(c.get("industry","")) or self._brand_key(c.get("description",""))
-            for key, inboxes in CORPORATE_POC_FALLBACK.items():
-                if brand and key in brand:
-                    poc_backup.extend([f"{e} (corporate fallback)" for e in inboxes])
-                    break
+            if not primary_emails:
+                brand = self._brand_key(r.get("name","")) or self._brand_key(r.get("industry","")) or self._brand_key(r.get("description",""))
+                if brand:
+                    for k, inboxes in CORPORATE_POC_FALLBACK.items():
+                        if k in brand:
+                            backup_emails.extend([f"{e} (corporate fallback)" for e in inboxes])
 
-        if poc_primary: c["poc_emails"] = sorted(list(set(poc_primary)))[:3]
-        if poc_backup:  c["poc_emails_backup"] = sorted(list(set(poc_backup)))[:3]
-        return c
+            if primary_emails: r["poc_emails"] = sorted(list(set(primary_emails)))[:3]
+            if backup_emails:  r["poc_emails_backup"] = sorted(list(set(backup_emails)))[:3]
+            if contacts:       r["poc_contacts"] = contacts
 
-    # ------- Normalize (prevents KeyError) -------
-    @staticmethod
-    def normalize(company: Dict) -> Dict:
-        # guarantee all expected fields exist
-        defaults = {
-            'name': 'Unknown', 'location': 'Unknown', 'distance_miles': 999.0, 'size': 'Small Business',
-            'industry': 'Manufacturing/Office', 'total_score': 0.0, 'microelectronics_score': 0.0,
-            'naval_score': 0.0, 'defense_score': 0.0, 'manufacturing_score': 0.0,
-            'rating': 0.0, 'user_ratings_total': 0, 'phone': 'Not available', 'website': 'Not available',
-            'is_prime_office': False, 'capabilities': [], 'lat': 0.0, 'lon': 0.0
-        }
-        for k, v in defaults.items():
-            company.setdefault(k, v)
-        # types must be list
-        if not isinstance(company.get('capabilities'), list):
-            company['capabilities'] = [str(company.get('capabilities'))]
-        return company
-
-    # ------- Public entry -------
-    def search_companies(self) -> List[Dict]:
-        api_key = st.session_state.get('api_key', GOOGLE_PLACES_API_KEY)
+    # -------- public entry --------
+    def run(self) -> List[Dict]:
+        api_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
         if not api_key:
             st.error("🔑 Google Places API key is REQUIRED.")
             return []
 
-        base = self.config.base_location
-        queries = self._domain_queries(base) + self._prime_queries(base)
+        all_queries = self._domain_queries(self.config.base_location) + self._prime_queries(self.config.base_location)
 
-        # single progress bar, no noisy per-query prints
-        progress = st.progress(0.0, text="Starting enhanced search…")
-        all_hits: List[Dict] = []
+        progress = st.progress(0.0)  # no text= to avoid SessionInfo error
+        status = st.empty()
 
-        for i, q in enumerate(queries, start=1):
-            progress.progress(i / len(queries), text=f"Searching ({i}/{len(queries)}): {q}")
-            all_hits.extend(self._search_google_places(q, api_key))
-            time.sleep(0.4)
-        progress.empty()
+        results: List[Dict] = []
+        for i, q in enumerate(all_queries, start=1):
+            status.write(f"Searching ({i}/{len(all_queries)}): {q}")
+            results.extend(self._places_text(q, api_key))
+            progress.progress(i/len(all_queries))
+            time.sleep(0.3)
 
-        # de-dupe by (name + rounded coords)
+        progress.empty(); status.empty()
+
+        # de-dup by (name + rounded coords)
         unique: List[Dict] = []
         seen = set()
-        for c in all_hits:
-            bucket = (c.get('name','').strip().lower(), round(c.get('lat',0.0),3), round(c.get('lon',0.0),3))
-            if bucket in seen:
-                continue
-            seen.add(bucket)
+        for r in results:
+            key = (r.get("name","").lower().strip(), round(r.get("lat",0.0),3), round(r.get("lon",0.0),3))
+            if key in seen: continue
+            seen.add(key)
+            unique.append(r)
 
-            # distance gate + scoring
-            if c.get('distance_miles', 999.0) <= self.config.radius_miles:
-                c.update(self._score(c))
-                unique.append(self.normalize(c))
+        # enrich POCs for primes
+        self.enrich_primes_with_pocs(unique)
 
-        # POC enrichment for primes
-        primes = [x for x in unique if x.get('is_prime_office')]
-        if primes:
-            with st.spinner(f"Enriching POCs for {len(primes)} prime offices…"):
-                for p in primes:
-                    self.enrich_poc_for_prime(p)
-
-        unique.sort(key=lambda x: x['total_score'], reverse=True)
+        # sort & limit
+        unique.sort(key=lambda x: x["total_score"], reverse=True)
         return unique[: self.config.target_company_count]
 
-# -----------------------------
-# Visualization
-# -----------------------------
-def company_map(companies: List[Dict], base_location: str):
-    if not companies: return None
-    df = pd.DataFrame(companies)
-    df = df[(df['lat'] != 0) & (df['lon'] != 0)]
+# --- Visualization & metrics ---
+def company_map(data: List[Dict], base_location: str):
+    if not data: return None
+    df = pd.DataFrame(data)
+    df = df[(df["lat"] != 0) & (df["lon"] != 0)]
     if df.empty: return None
 
-    bases = {
-        'south bend': (41.6764, -86.2520), 'norfolk': (36.8508, -76.2859),
-        'san diego': (32.7157, -117.1611), 'pearl harbor': (21.3099, -157.8581),
-        'newport news': (37.0871, -76.4730), 'bath': (43.9109, -69.8214), 'groton': (41.3501, -72.0979)
-    }
-    base_lat, base_lon = 41.6764, -86.2520
-    for key, coords in bases.items():
-        if key in base_location.lower():
-            base_lat, base_lon = coords; break
+    base_lat, base_lon = HUBS.get(base_location.split(",")[0].lower(), HUBS["south bend"])
+    for k,(lat,lon) in HUBS.items():
+        if k in base_location.lower(): base_lat, base_lon = (lat,lon); break
 
     fig = go.Figure()
     fig.add_trace(go.Scattermapbox(
-        lat=[base_lat], lon=[base_lon], mode='markers',
-        marker=dict(size=18, color='blue'),
-        text=[f"Search Center: {base_location}"], name='Base'
+        lat=[base_lat], lon=[base_lon], mode="markers",
+        marker=dict(size=18, color="blue"), text=[f"Search Center: {base_location}"], name="Base"
     ))
-
     hovers = []
     for _, r in df.iterrows():
-        lines = [
-            f"{'🏛️ PRIME ' if r.get('is_prime_office') else ''}{r['name']}",
-            f"Score {r['total_score']:.1f} · Micro {r['microelectronics_score']:.1f} · Naval {r['naval_score']:.1f}",
-            f"Dist {r['distance_miles']} mi"
-        ]
-        if r.get('poc_emails'): lines.append("POC: " + ", ".join(r['poc_emails'][:2]))
+        lines = [f"{'🏛️ PRIME ' if r.get('is_prime_office') else ''}{r['name']}",
+                 f"Score {r['total_score']:.1f} · Micro {r['microelectronics_score']:.1f} · Naval {r['naval_score']:.1f}",
+                 f"Dist {r['distance_miles']} mi"]
+        if r.get("poc_emails"): lines.append("POC: " + ", ".join(r["poc_emails"][:2]))
+        if r.get("poc_contacts"):
+            first = r["poc_contacts"][0]
+            tag = f"{first.get('name','').strip()} ({first.get('title','').strip()})".strip()
+            if tag not in ("()", ""): lines.append(f"Contact: {tag}")
         hovers.append("<br>".join(lines))
 
     fig.add_trace(go.Scattermapbox(
-        lat=df['lat'], lon=df['lon'], mode='markers',
-        marker=dict(size=11, color=df['total_score'], colorscale='Viridis', showscale=True,
+        lat=df["lat"], lon=df["lon"], mode="markers",
+        marker=dict(size=11, color=df["total_score"], colorscale="Viridis", showscale=True,
                     colorbar=dict(title="Score")),
-        text=hovers, name='Entities'
+        text=hovers, name="Entities"
     ))
     fig.update_layout(
-        mapbox=dict(style='open-street-map', center=dict(lat=base_lat, lon=base_lon), zoom=8),
+        mapbox=dict(style="open-street-map", center=dict(lat=base_lat, lon=base_lon), zoom=8),
         height=600, title="Enhanced Supplier & Prime Office Map"
     )
     return fig
 
-def metrics_html(companies: List[Dict]) -> str:
-    if not companies: return ""
-    df = pd.DataFrame(companies)
-    def count(col, th): return len(df[df[col] >= th])
-    total = len(df)
-    primes = len(df[df['is_prime_office'] == True])
-    micro = count('microelectronics_score', 10)
-    naval = count('naval_score', 10)
-    defense = count('defense_score', 8)
-    high = count('total_score', 15)
-    smalls = len(df[df['size'].str.contains('Small', na=False)])
-    avgd = df['distance_miles'].mean()
-    qual = len(df[(df['rating'] >= 4.0) & (df['user_ratings_total'] >= 10)])
+def metrics_html(data: List[Dict]) -> str:
+    if not data: return ""
+    df = pd.DataFrame(data)
+    def count(col, th): return int((df[col] >= th).sum())
     return f"""
     <div class="metric-grid">
-      <div class="metric-card"><p class="metric-value">{total}</p><p class="metric-label">Total Entities</p></div>
-      <div class="metric-card"><p class="metric-value">{primes}</p><p class="metric-label">Prime Offices</p></div>
-      <div class="metric-card"><p class="metric-value">{micro}</p><p class="metric-label">Microelectronics</p></div>
-      <div class="metric-card"><p class="metric-value">{naval}</p><p class="metric-label">Naval / Maritime</p></div>
-      <div class="metric-card"><p class="metric-value">{defense}</p><p class="metric-label">Defense Contractors</p></div>
-      <div class="metric-card"><p class="metric-value">{high}</p><p class="metric-label">High Relevance</p></div>
-      <div class="metric-card"><p class="metric-value">{smalls}</p><p class="metric-label">Small Businesses</p></div>
-      <div class="metric-card"><p class="metric-value">{avgd:.1f} mi</p><p class="metric-label">Avg Distance</p></div>
-      <div class="metric-card"><p class="metric-value">{qual}</p><p class="metric-label">Quality Suppliers</p></div>
+      <div class="metric-card"><p class="metric-value">{len(df)}</p><p class="metric-label">Total Entities</p></div>
+      <div class="metric-card"><p class="metric-value">{int((df['is_prime_office']==True).sum())}</p><p class="metric-label">Prime Offices</p></div>
+      <div class="metric-card"><p class="metric-value">{count('microelectronics_score',10)}</p><p class="metric-label">Microelectronics</p></div>
+      <div class="metric-card"><p class="metric-value">{count('naval_score',10)}</p><p class="metric-label">Naval / Maritime</p></div>
+      <div class="metric-card"><p class="metric-value">{count('defense_score',8)}</p><p class="metric-label">Defense Contractors</p></div>
+      <div class="metric-card"><p class="metric-value">{count('total_score',15)}</p><p class="metric-label">High Relevance</p></div>
+      <div class="metric-card"><p class="metric-value">{int(df['distance_miles'].mean()) if len(df) else 0} mi</p><p class="metric-label">Avg Distance</p></div>
+      <div class="metric-card"><p class="metric-value">{int(((df['rating']>=4.0)&(df['user_ratings_total']>=10)).sum())}</p><p class="metric-label">Quality Suppliers</p></div>
     </div>
     """
 
-def executive_report(companies: List[Dict], config: SearchConfig) -> str:
-    if not companies: return "No companies found."
-    df = pd.DataFrame(companies)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    total = len(df); micro = len(df[df['microelectronics_score'] >= 10])
-    naval = len(df[df['naval_score'] >= 10]); high = len(df[df['total_score'] >= 15])
-    top_overall = df.nlargest(3, 'total_score')
-    top_micro = df.nlargest(3, 'microelectronics_score')
-    top_naval = df.nlargest(3, 'naval_score')
-    rep = f"""
-# 🎯 WBI Naval Search — Executive Summary
+def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
+    """
+    Build a styled Excel workbook in-memory.
+    Returns bytes if openpyxl is available, otherwise None (caller falls back to CSV).
+    """
+    if not OPENPYXL_AVAILABLE:
+        return None
 
-**Generated:** {now}  
-**Location:** {config.base_location} — **Radius:** {config.radius_miles} mi
+    # Ensure all expected columns exist
+    cols = [
+        'name','location','distance_miles','size','industry','total_score','microelectronics_score',
+        'naval_score','defense_score','manufacturing_score','rating','user_ratings_total',
+        'phone','website','is_prime_office','poc_emails','poc_emails_backup','poc_contacts'
+    ]
+    for c in cols:
+        if c not in df.columns:
+            # choose reasonable defaults
+            if c in ('phone','website'):
+                df[c] = 'Not available'
+            elif c == 'is_prime_office':
+                df[c] = False
+            elif c in ('poc_emails','poc_emails_backup','poc_contacts'):
+                df[c] = [[] for _ in range(len(df))]
+            else:
+                df[c] = 0
 
-- Entities evaluated: **{total}**
-- Microelectronics-capable (≥10): **{micro}**
-- Naval/Maritime focus (≥10): **{naval}**
-- High overall (≥15): **{high}**
-- Avg distance: **{df['distance_miles'].mean():.1f} mi**
+    out = df[cols].copy()
+    out = out.rename(columns={
+        'name':'Company Name','location':'Location','distance_miles':'Distance (Miles)',
+        'size':'Company Size','industry':'Industry','total_score':'Total Score',
+        'microelectronics_score':'Microelectronics Score','naval_score':'Naval Score',
+        'defense_score':'Defense Score','manufacturing_score':'Manufacturing Score',
+        'rating':'Rating','user_ratings_total':'Review Count','phone':'Phone','website':'Website',
+        'is_prime_office':'Prime Office','poc_emails':'POC Emails','poc_emails_backup':'POC Emails (Backup)',
+        'poc_contacts':'POC Contacts'
+    })
 
-## 🏆 Top Overall
-"""
-    for i, (_, r) in enumerate(top_overall.iterrows(), start=1):
-        rep += f"\n**{i}. {r['name']}** — Score {r['total_score']:.1f} · Micro {r['microelectronics_score']:.1f} · Naval {r['naval_score']:.1f}"
-    if not top_micro.empty:
-        rep += "\n\n## 🔬 Microelectronics Leaders\n"
-        for i, (_, r) in enumerate(top_micro.iterrows(), start=1):
-            rep += f"\n**{i}. {r['name']}** — Micro {r['microelectronics_score']:.1f} · Capabilities: {', '.join(r['capabilities'][:4])}"
-    if not top_naval.empty:
-        rep += "\n\n## ⚓ Naval/Maritime Specialists\n"
-        for i, (_, r) in enumerate(top_naval.iterrows(), start=1):
-            rep += f"\n**{i}. {r['name']}** — Naval {r['naval_score']:.1f} · Capabilities: {', '.join(r['capabilities'][:4])}"
-    return rep
+    # flatten list-ish columns
+    def _flatten(v):
+        if isinstance(v, list):
+            if v and isinstance(v[0], dict):
+                return ", ".join([f"{x.get('name','')}{' ('+x.get('title','')+')' if x.get('title') else ''}" for x in v])
+            return ", ".join(map(str, v))
+        return v
 
-# -----------------------------
-# App
-# -----------------------------
+    for c in ('POC Emails','POC Emails (Backup)','POC Contacts'):
+        if c in out.columns:
+            out[c] = out[c].apply(_flatten)
+
+    # --- Build workbook (use Any to satisfy static checker) ---
+    wb = Workbook()
+    ws: Any = wb.active  # cast to Any so Pylance doesn't think it's Optional/None
+    ws.title = "Naval Suppliers"
+
+    # Write header & rows
+    for row in dataframe_to_rows(out, index=False, header=True):
+        ws.append(row)
+
+    # Header style
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1f2937")
+    # list(ws[1]) ensures subscription returns a list (avoids "not subscriptable" warning)
+    for cell in list(ws[1]):
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    # Column widths
+    widths = {
+        "A":34,"B":28,"C":14,"D":20,"E":28,"F":12,"G":14,"H":12,"I":12,"J":12,
+        "K":8,"L":10,"M":18,"N":34,"O":12,"P":36,"Q":36,"R":36
+    }
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
+
+    # Number formats
+    numfmt = {"C":"0.0","F":"0.0","G":"0.0","H":"0.0","I":"0.0","J":"0.0","K":"0.0"}
+    # list(ws[col]) to keep type checker happy; skip header (row 1)
+    for col, fmt in numfmt.items():
+        for cell in list(ws[col])[1:]:
+            cell.number_format = fmt
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+# --- App UI ---
 def main():
-    # Session state
-    if 'search_triggered' not in st.session_state: st.session_state.search_triggered = False
-    if 'companies' not in st.session_state: st.session_state.companies = []
+    # session init
+    if "search_triggered" not in st.session_state: st.session_state.search_triggered = False
+    if "companies" not in st.session_state: st.session_state.companies = []
 
     # Sidebar
     st.sidebar.header("🔧 Search Configuration")
@@ -700,36 +673,33 @@ def main():
         "Bath, Maine (Bath Iron Works)": "Bath, Maine",
         "Groton, Connecticut (Electric Boat)": "Groton, Connecticut",
     }
-    config.base_location = presets[st.sidebar.selectbox("Naval hub", list(presets.keys()))]
+    chosen = st.sidebar.selectbox("Naval hub", list(presets.keys()))
+    config.base_location = presets[chosen]
     config.radius_miles = st.sidebar.slider("Search Radius (miles)", 10, 150, 60)
-    config.target_company_count = st.sidebar.slider("Max Entities", 10, 400, 200)
+    config.target_company_count = st.sidebar.slider("Max Entities", 10, 500, 250)
 
     with st.sidebar:
         st.markdown("---")
-        colA, colB = st.columns([1,1])
-        with colA:
-            run = st.button("🔍 Run Search", type="primary")
-        with colB:
-            show_logs = st.toggle("Show debug logs", value=False)
+        run = st.button("🔍 Run Search", type="primary")
         if run:
             st.session_state.search_triggered = True
             st.session_state.companies = []
 
-    # Search runner (results appear without long scrolling)
+    # Run search
     if st.session_state.search_triggered:
-        with st.spinner("Running enhanced search (domains + prime offices)…"):
+        with st.spinner("Running enhanced search (with location bias) and enriching POCs…"):
             searcher = EnhancedNavalSearcher(config)
-            companies = searcher.search_companies()
-            st.session_state.companies = companies
+            data = searcher.run()
+            st.session_state.companies = data
         st.session_state.search_triggered = False
 
-    companies = st.session_state.companies
+    data = st.session_state.companies
 
-    # Top summary + metrics
+    # Metrics
     st.markdown('<div class="wbi-card">', unsafe_allow_html=True)
     st.subheader("📊 Intelligence Dashboard")
-    if companies:
-        st.markdown(metrics_html(companies), unsafe_allow_html=True)
+    if data:
+        st.markdown(metrics_html(data), unsafe_allow_html=True)
     else:
         st.info("No results yet. Configure options and click **Run Search**.")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -746,117 +716,96 @@ def main():
         with c4: size_filter = st.selectbox("Company Size", ["All","Small Business","Small-Medium Business","Medium Business","Large Corporation","Fortune 500 / Major Corporation"])
         with c5: primes_only = st.checkbox("Only Prime Offices", value=False)
 
-        filtered = [c for c in companies if c['total_score'] >= min_total
-                    and c['microelectronics_score'] >= min_micro
-                    and c['naval_score'] >= min_naval]
-        if size_filter != "All":
-            filtered = [c for c in filtered if c['size'] == size_filter]
+        filtered = [c for c in data if c["total_score"]>=min_total and c["microelectronics_score"]>=min_micro and c["naval_score"]>=min_naval]
+        if size_filter!="All":
+            filtered = [c for c in filtered if c["size"]==size_filter]
         if primes_only:
-            filtered = [c for c in filtered if c.get('is_prime_office')]
+            filtered = [c for c in filtered if c.get("is_prime_office")]
 
-        st.info(f"Showing {len(filtered)} of {len(companies)} entities")
+        st.info(f"Showing {len(filtered)} of {len(data)} entities")
         if not filtered:
             st.warning("No entities match the current filters.")
-        else:
-            for c in filtered:
-                badge = "🔥 Exceptional" if c['total_score'] >= 25 else "🟢 High" if c['total_score'] >= 15 else "🟡 Good" if c['total_score'] >= 10 else "🔴 Basic"
-                title = f"{'🏛️ PRIME' if c.get('is_prime_office') else '🏭'} {c['name']} — {badge} (Score: {c['total_score']:.1f})"
-                with st.expander(title):
-                    m1, m2, m3, m4, m5 = st.columns(5)
-                    m1.metric("Total", f"{c['total_score']:.1f}")
-                    m2.metric("Micro", f"{c['microelectronics_score']:.1f}")
-                    m3.metric("Naval", f"{c['naval_score']:.1f}")
-                    m4.metric("Defense", f"{c['defense_score']:.1f}")
-                    m5.metric("Mfg", f"{c['manufacturing_score']:.1f}")
-                    a, b = st.columns(2)
-                    with a:
-                        st.markdown("**Company Info**")
-                        st.write(f"📍 {c['location']}")
-                        st.write(f"🌐 {c['website']}")
-                        st.write(f"📞 {c['phone']}")
-                        st.write(f"🏢 Size: {c['size']}")
-                        st.write(f"📏 Distance: {c['distance_miles']} mi")
-                    with b:
-                        st.markdown("**Capabilities**")
-                        for cap in c['capabilities']: st.write(f"• {cap}")
-                        st.markdown("**Quality**")
-                        st.write(f"⭐ {c['rating']:.1f} ({c['user_ratings_total']} reviews)")
-                    st.markdown(f"**Description:** {c['description']}")
-                    if c.get('is_prime_office') or c.get('poc_emails') or c.get('poc_emails_backup'):
-                        st.markdown("**📇 Points of Contact**")
-                        if c.get('poc_emails'): st.write("Primary:", ", ".join(c['poc_emails']))
-                        if c.get('poc_emails_backup'):
-                            back = c['poc_emails_backup']
-                            st.write("Backup:", ", ".join(back) if isinstance(back, list) else back)
+        for c in filtered:
+            badge = "🔥 Exceptional" if c["total_score"]>=25 else "🟢 High" if c["total_score"]>=15 else "🟡 Good" if c["total_score"]>=10 else "🔴 Basic"
+            title = f"{'🏛️ PRIME' if c.get('is_prime_office') else '🏭'} {c['name']} — {badge} (Score: {c['total_score']:.1f})"
+            with st.expander(title):
+                m1,m2,m3,m4,m5 = st.columns(5)
+                m1.metric("Total", f"{c['total_score']:.1f}")
+                m2.metric("Micro", f"{c['microelectronics_score']:.1f}")
+                m3.metric("Naval", f"{c['naval_score']:.1f}")
+                m4.metric("Defense", f"{c['defense_score']:.1f}")
+                m5.metric("Mfg", f"{c['manufacturing_score']:.1f}")
+                a,b = st.columns(2)
+                with a:
+                    st.markdown("**Company Info**")
+                    st.write(f"📍 {c['location']}")
+                    st.write(f"🌐 {c['website']}")
+                    st.write(f"📞 {c['phone']}")
+                    st.write(f"🏢 Size: {c['size']}")
+                    st.write(f"📏 Distance: {c['distance_miles']} mi")
+                with b:
+                    st.markdown("**Capabilities**")
+                    for cap in c["capabilities"]: st.write(f"• {cap}")
+                    st.markdown("**Quality**")
+                    st.write(f"⭐ {c['rating']:.1f} ({c['user_ratings_total']} reviews)")
+                st.markdown(f"**Description:** {c['description']}")
+                if c.get("is_prime_office") or c.get("poc_emails") or c.get("poc_emails_backup") or c.get("poc_contacts"):
+                    st.markdown("**📇 Points of Contact**")
+                    if c.get("poc_contacts"):
+                        for person in c["poc_contacts"]:
+                            nm = person.get("name"); tt = person.get("title")
+                            if nm or tt: st.write(f"- {nm or ''}{' ('+tt+')' if tt else ''}")
+                    if c.get("poc_emails"): st.write("Primary:", ", ".join(c["poc_emails"]))
+                    if c.get("poc_emails_backup"):
+                        back = c["poc_emails_backup"]
+                        st.write("Backup:", ", ".join(back) if isinstance(back,list) else back)
 
     with tab2:
         st.subheader("🗺️ Map")
-        fig = company_map(companies, config.base_location)
+        fig = company_map(data, config.base_location)
         if fig: st.plotly_chart(fig, use_container_width=True)
         else:   st.info("No mappable coordinates yet.")
 
     with tab3:
         st.subheader("📊 Analytics")
-        if not companies:
+        if not data:
             st.info("Run a search to see analytics.")
         else:
-            df = pd.DataFrame(companies).copy()
-            # ensure columns exist
-            for col in ['total_score','microelectronics_score','naval_score','defense_score','manufacturing_score','capabilities']:
-                if col not in df.columns: df[col] = 0
-            left, right = st.columns(2)
+            df = pd.DataFrame(data).copy()
+            for col in ['total_score','microelectronics_score','naval_score','defense_score','manufacturing_score']:
+                if col not in df.columns: df[col]=0.0
+            left,right = st.columns(2)
             with left:
                 st.plotly_chart(px.histogram(df, x='total_score', title='Score Distribution', nbins=20), use_container_width=True)
                 st.plotly_chart(px.scatter(df, x='microelectronics_score', y='naval_score',
                                            hover_name='name', title='Microelectronics vs Naval',
                                            size='total_score'), use_container_width=True)
             with right:
-                cats = ['manufacturing_score', 'microelectronics_score', 'naval_score', 'defense_score']
+                cats = ['manufacturing_score','microelectronics_score','naval_score','defense_score']
                 vals = [float(df[c].mean() or 0) for c in cats]
                 st.plotly_chart(px.bar(x=['Manufacturing','Microelectronics','Naval','Defense'], y=vals,
                                        title='Average Scores by Category'), use_container_width=True)
-                caps = []
-                for row in df['capabilities']: caps.extend(row if isinstance(row, list) else [row])
-                if caps:
-                    cap_counts = pd.Series(caps).value_counts().head(12)
-                    st.plotly_chart(px.bar(x=cap_counts.values, y=cap_counts.index, title='Top Capabilities', orientation='h'),
-                                    use_container_width=True)
 
     with tab4:
         st.subheader("📄 Export")
-        if not companies:
+        if not data:
             st.info("Run a search to export results.")
         else:
-            df = pd.DataFrame(companies).copy()
-            expected = ['name','location','distance_miles','size','industry','total_score','microelectronics_score',
-                        'naval_score','defense_score','manufacturing_score','rating','user_ratings_total',
-                        'phone','website','is_prime_office','poc_emails','poc_emails_backup']
-            for col in expected:
-                if col not in df.columns:
-                    df[col] = "" if col in ['phone','website'] else (False if col=='is_prime_office' else 0)
-            export_df = df[expected].rename(columns={
-                'name':'Company Name','location':'Location','distance_miles':'Distance (Miles)',
-                'size':'Company Size','industry':'Industry','total_score':'Total Score',
-                'microelectronics_score':'Microelectronics Score','naval_score':'Naval Score',
-                'defense_score':'Defense Score','manufacturing_score':'Manufacturing Score',
-                'rating':'Rating','user_ratings_total':'Review Count','phone':'Phone','website':'Website',
-                'is_prime_office':'Prime Office','poc_emails':'POC Emails','poc_emails_backup':'POC Emails (Backup)'
-            })
-            export_df['Search Location'] = config.base_location
-            export_df['Search Date'] = datetime.now().strftime("%Y-%m-%d")
-
-            st.dataframe(export_df, use_container_width=True, height=420)
-            csv = export_df.to_csv(index=False)
-            excel_csv = '\ufeff' + csv
-            c1, c2 = st.columns(2)
-            with c1:
-                st.download_button("📥 Download CSV", data=csv,
-                                   file_name=f"naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                   mime="text/csv")
-            with c2:
-                st.download_button("📊 Download for Excel", data=excel_csv,
-                                   file_name=f"naval_companies_{datetime.now().strftime('%Y%m%d_%H%M')}_excel.csv",
-                                   mime="text/csv")
+            df = pd.DataFrame(data).copy()
+            xbytes = export_xlsx(df)
+            if xbytes:
+                st.download_button("📊 Download Excel (.xlsx)", data=xbytes,
+                                   file_name=f"naval_suppliers_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            else:
+                st.warning("openpyxl not available — falling back to CSV.")
+                csv = '\ufeff' + df.to_csv(index=False)  # add UTF-8 BOM so Excel opens cleanly
+                st.download_button(
+                    "📥 Download CSV",
+                    data=csv,
+                    file_name=f"naval_suppliers_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
 
 if __name__ == "__main__":
     main()
