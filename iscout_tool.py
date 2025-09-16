@@ -448,6 +448,49 @@ class EnhancedNavalSearcher:
         if not isinstance(c["capabilities"], list): c["capabilities"] = [str(c["capabilities"])]
         return c
 
+    def _validate_prime_office(self, c: Dict) -> Dict:
+        """
+        If a result is flagged as prime office but the website doesn't match the expected
+        corporate domains, downgrade it (prevents distributor/partner false positives).
+        """
+        expected_domains = {
+            "Lockheed Martin": ["lockheedmartin.com"],
+            "Northrop Grumman": ["northropgrumman.com", "ngc.com"],
+            "Raytheon": ["rtx.com", "raytheon.com"],
+            "General Dynamics": ["gd.com", "gdeb.com"],
+            "Electric Boat": ["gdeb.com"],
+            "Huntington Ingalls": ["hii.com", "hii-co.com"],
+            "BAE Systems": ["baesystems.com"],
+            "L3Harris": ["l3harris.com"],
+            "Boeing": ["boeing.com"],
+            "Textron": ["textron.com"],
+            "Collins Aerospace": ["collinsaerospace.com", "rockwellcollins.com"]
+        }
+
+        name_l = (c.get("name") or "").lower()
+        website = (c.get("website") or "").lower()
+        if not c.get("is_prime_office"):
+            return c
+
+        matched_brand = None
+        for brand in expected_domains.keys():
+            if brand.lower().split()[0] in name_l:
+                matched_brand = brand
+                break
+
+        if not matched_brand:
+            # No brand matched in the name; be conservative and keep it flagged but with low confidence
+            return c
+
+        # If brand matched, require website domain alignment
+        domains = expected_domains.get(matched_brand, [])
+        if website and any(d in website for d in domains):
+            return c  # good
+        else:
+            # downgrade — wrong or missing domain
+            c["is_prime_office"] = False
+            return c
+
     # --- POC enrichment with names/titles (lightweight HTML scraping) ---
     def _fetch_html(self, url: str) -> str:
         try:
@@ -605,7 +648,11 @@ class EnhancedNavalSearcher:
             status.write(f"Searching ({i}/{len(all_queries)}): {q}")
             for p in providers:
                 try:
-                    results_raw.extend(p.search(q))
+                    hits = p.search(q)
+                    # tag each hit with the originating query
+                    for h in hits:
+                        h["_q"] = q
+                        results_raw.append(h)
                 except Exception as ex:
                     st.caption(f"ℹ️ Provider error: {ex}")
             progress.progress(i/len(all_queries))
@@ -618,13 +665,16 @@ class EnhancedNavalSearcher:
         for item in results_raw:
             prov = item.get("_provider")
             raw = item.get("_raw", {})
+            q = item.get("_q", "")  # <-- carry the real query
             if prov == "google":
-                norm = self._normalize_google(raw, query="")  # query not needed; desc built from types
+                norm = self._normalize_google(raw, query=q)
             elif prov == "foursquare":
-                norm = self._normalize_foursquare(raw, query="")
+                norm = self._normalize_foursquare(raw, query=q)
             else:
                 norm = None
             if norm:
+                # ensure prime offices are real (domain check)
+                norm = self._validate_prime_office(norm)
                 normalized.append(norm)
 
         # De-dup (name + rounded coords)
@@ -669,26 +719,50 @@ def company_map(data: List[Dict], base_location: str):
         marker=dict(size=18, color="blue"), text=[f"Search Center: {base_location}"], name="Base"
     ))
 
-    hovers = []
+    # Build hover text safely
+    hovers: List[str] = []
     for _, r in df.iterrows():
-        lines = [f"{'🏛️ PRIME ' if r.get('is_prime_office') else ''}{r['name']}",
-                 f"Score {r['total_score']:.1f} · Micro {r['microelectronics_score']:.1f} · Naval {r['naval_score']:.1f}",
-                 f"Dist {r['distance_miles']} mi"]
-        if r.get("sam_active"):
-            lines.append(f"SAM Active · CAGE {r.get('sam_cage') or ''} · UEI {r.get('sam_uei') or ''}")
-        if r.get("poc_emails"): lines.append("POC: " + ", ".join(r["poc_emails"][:2]))
-        if r.get("poc_contacts"):
-            first = r["poc_contacts"][0]
-            tag = f"{first.get('name','').strip()} ({first.get('title','').strip()})".strip()
-            if tag not in ("()", ""): lines.append(f"Contact: {tag}")
-        hovers.append("<br>".join(lines))
+        try:
+            title_prefix = "🏛️ PRIME " if bool(r.get("is_prime_office")) else ""
+            line1 = f"{title_prefix}{r.get('name','')}"
+            line2 = (
+                f"Score {float(r.get('total_score',0)):.1f} · "
+                f"Micro {float(r.get('microelectronics_score',0)):.1f} · "
+                f"Naval {float(r.get('naval_score',0)):.1f}"
+            )
+            dist = r.get("distance_miles")
+            line3 = f"Dist {dist} mi" if dist is not None else "Dist —"
 
+            lines = [line1, line2, line3]
+
+            # Primary POC emails
+            poc_emails = r.get("poc_emails") or []
+            if isinstance(poc_emails, list) and poc_emails:
+                lines.append("POC: " + ", ".join([str(x) for x in poc_emails[:2]]))
+
+            # First extracted contact (name/title)
+            poc_contacts = r.get("poc_contacts") or []
+            if isinstance(poc_contacts, list) and len(poc_contacts) > 0 and isinstance(poc_contacts[0], dict):
+                nm = poc_contacts[0].get("name") or ""
+                tt = poc_contacts[0].get("title") or ""
+                nm = nm.strip() if isinstance(nm, str) else ""
+                tt = tt.strip() if isinstance(tt, str) else ""
+                tag = (f"{nm} ({tt})" if nm and tt else nm or tt).strip()
+                if tag:
+                    lines.append(f"Contact: {tag}")
+
+            hovers.append("<br>".join(lines))
+        except Exception:
+            hovers.append(str(r.get("name","")))
+
+    # Add entities trace
     fig.add_trace(go.Scattermapbox(
         lat=df["lat"], lon=df["lon"], mode="markers",
         marker=dict(size=11, color=df["total_score"], colorscale="Viridis", showscale=True,
                     colorbar=dict(title="Score")),
         text=hovers, name="Entities"
     ))
+
     fig.update_layout(
         mapbox=dict(style="open-street-map", center=dict(lat=base_lat, lon=base_lon), zoom=8),
         height=600, title="Enhanced Supplier & Prime Office Map"
@@ -786,6 +860,19 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
+
+def build_poc_search_links(name: str, location: str) -> Dict[str, str]:
+        """
+        Build helpful Google and LinkedIn search URLs for POC hunting.
+        """
+        name = (name or "").strip()
+        loc = (location or "").split(",")[0].strip()
+        gq = f'{name} "business development" {loc} OR supplier OR procurement OR subcontracts'
+        lq = f'site:linkedin.com ("business development" OR procurement OR "supplier diversity" OR "supply chain") "{name}" "{loc}"'
+        return {
+            "google": f"https://www.google.com/search?q={quote_plus(gq)}",
+            "linkedin": f"https://www.google.com/search?q={quote_plus(lq)}",
+        }
 
 # --- App UI ---
 def main():
@@ -930,24 +1017,31 @@ def main():
                 # POCs
                 if c.get("is_prime_office") or c.get("poc_emails") or c.get("poc_emails_backup") or c.get("poc_contacts"):
                     st.markdown("**📇 Points of Contact**")
-                    if c.get("poc_contacts"):
-                        for person in c["poc_contacts"]:
-                            nm = person.get("name"); tt = person.get("title")
-                            if nm or tt: st.write(f"- {nm or ''}{' ('+tt+')' if tt else ''}")
-                    if c.get("poc_emails"): st.write("Primary:", ", ".join(c["poc_emails"]))
+                    poc_contacts = c.get("poc_contacts") or []
+                    if isinstance(poc_contacts, list):
+                        for person in poc_contacts:
+                            if not isinstance(person, dict):
+                                continue
+                            nm = person.get("name") or ""
+                            tt = person.get("title") or ""
+                            nm = nm.strip() if isinstance(nm, str) else ""
+                            tt = tt.strip() if isinstance(tt, str) else ""
+                            line = (f"- {nm} ({tt})" if nm and tt else f"- {nm or tt}").strip()
+                            if line != "-":
+                                st.write(line)
+                    
+                    if c.get("poc_emails"):
+                        st.write("Primary:", ", ".join([str(x) for x in c["poc_emails"]]))
                     if c.get("poc_emails_backup"):
                         back = c["poc_emails_backup"]
-                        st.write("Backup:", ", ".join(back) if isinstance(back,list) else back)
-
-                # Quick-links for named roles (manual, ToS-safe)
-                base_name = c['name']
-                city_hint = c['location'].split(",")[0]
-                role_terms = '("Business Development" OR "Supplier Diversity" OR Subcontracts OR Procurement OR "Supply Chain")'
-                gq = f'{base_name} {role_terms} {city_hint}'
-                lq = f'{base_name} ("Business Development" OR "Supplier Diversity" OR Subcontracts OR Procurement OR "Supply Chain") {city_hint}'
-                g_url = f'https://www.google.com/search?q={quote(gq)}'
-                li_url = f'https://www.google.com/search?q={quote("site:linkedin.com " + lq)}'
-                st.markdown(f'[🔎 Google POC search]({g_url}) &nbsp;|&nbsp; [🔗 LinkedIn POC (via Google)]({li_url})', unsafe_allow_html=True)
+                        if isinstance(back, list):
+                            st.write("Backup:", ", ".join([str(x) for x in back]))
+                        else:
+                            st.write("Backup:", str(back))
+                        
+                    # 🔎 One-click POC searches
+                    links = build_poc_search_links(c.get("name",""), c.get("location",""))
+                    st.markdown(f"[🔎 Google POC Search]({links['google']})  |  [🔎 LinkedIn POC Search]({links['linkedin']})")
 
     with tab2:
         st.subheader("🗺️ Map")
