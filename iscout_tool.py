@@ -1,10 +1,14 @@
+# iscout_tool.py
+
 import os
 import re
 import io
 import time
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
+from urllib.parse import quote, quote_plus, urlencode
 
 import pandas as pd
 import requests
@@ -12,6 +16,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
+# ----- Optional deps -----
 try:
     from openpyxl import Workbook
     from openpyxl.utils.dataframe import dataframe_to_rows
@@ -28,14 +33,18 @@ except Exception:
 
 st.set_page_config(page_title="WBI Naval Search - Enhanced Supplier Intelligence", page_icon="⚓", layout="wide")
 
-GOOGLE_PLACES_API_KEY = (
-    st.secrets.get("GOOGLE_PLACES_API_KEY", "")
-    if hasattr(st, "secrets") and "GOOGLE_PLACES_API_KEY" in st.secrets
-    else os.environ.get("GOOGLE_PLACES_API_KEY", "")
-)
+# ----- Keys (support st.secrets OR env) -----
+def _get_secret_or_env(name: str, default: str = "") -> str:
+    if hasattr(st, "secrets") and name in st.secrets:
+        return st.secrets.get(name, default)  # type: ignore[attr-defined]
+    return os.environ.get(name, default)
+
+GOOGLE_PLACES_API_KEY = _get_secret_or_env("GOOGLE_PLACES_API_KEY", "")
+FOURSQUARE_API_KEY = _get_secret_or_env("FOURSQUARE_API_KEY", "")
+SAM_API_KEY = _get_secret_or_env("SAM_API_KEY", "")
 
 HTTP_TIMEOUT = 15
-UA = "WBI-Naval-Search/1.1"
+UA = "WBI-Naval-Search/1.2"
 HTML_HEADERS = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml"}
 
 # --- Styling (compact, dark) ---
@@ -60,6 +69,8 @@ padding:10px 16px;font-weight:700;box-shadow:0 6px 24px rgba(37,99,235,.25)}
 .stButton>button:hover{filter:brightness(1.08); transform:translateY(-1px)}
 .streamlit-expanderHeader{background:#0b1225;border:1px solid #1f2937;border-radius:10px;color:#e2e8f0}
 .streamlit-expanderContent{background:#0f172a;border:1px solid #1f2937;border-top:none}
+a.quicklink{color:#93c5fd;text-decoration:none}
+a.quicklink:hover{text-decoration:underline}
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,12 +83,9 @@ st.markdown("""
 
 # --- Primes & corporate fallbacks ---
 PRIME_BRANDS = [
-    # parent brands
     "Lockheed Martin","Northrop Grumman","Raytheon","General Dynamics","BAE Systems",
     "Huntington Ingalls","L3Harris","Boeing Defense","Textron","Collins Aerospace",
-    # key shipyards / divisions commonly branded standalone
     "Electric Boat","Newport News Shipbuilding","Bath Iron Works",
-    # brand short forms we’ll search for
     "LM RMS","RMS","Missiles and Defense","MDA","Mission Systems","Space Systems",
 ]
 CORPORATE_POC_FALLBACK = {
@@ -110,6 +118,9 @@ class SearchConfig:
     base_location: str = "South Bend, Indiana"
     radius_miles: int = 60
     target_company_count: int = 250
+    use_google: bool = True
+    use_foursquare: bool = True
+    use_samgov: bool = True
 
 MICROELECTRONICS_WEIGHTS = {
     "microelectronics": 25, "semiconductor": 20, "pcb manufacturing": 18,
@@ -135,6 +146,103 @@ DEFENSE_WEIGHTS = {'defense contractor': 15, 'military contractor': 12, 'aerospa
                     'defense systems': 12, 'military systems': 10, 'government contracting': 8}
 ROBOTICS_WEIGHTS = {'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8}
 
+# ---------- Providers ----------
+class GoogleProvider:
+    def __init__(self, api_key: str, center: Tuple[float,float], radius_mi: int):
+        self.api_key = api_key
+        self.lat, self.lon = center
+        self.radius_mi = radius_mi
+
+    def search(self, query: str) -> List[Dict]:
+        if not self.api_key:
+            return []
+        # cap at 50km bias
+        radius_m = min(int(self.radius_mi * 1609.34), 50000)
+        url = "https://places.googleapis.com/v1/places:searchText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": self.api_key,
+            "X-Goog-FieldMask": (
+                "places.displayName,places.formattedAddress,places.location,places.types,"
+                "places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus"
+            ),
+        }
+        base_body = {"textQuery": query, "maxResultCount": 20}
+        biased_body = {
+            **base_body,
+            "locationBias": {
+                "circle": {"center": {"latitude": self.lat, "longitude": self.lon}, "radius": radius_m}
+            },
+        }
+
+        def _call(body: Dict) -> Tuple[List[Dict], Optional[str]]:
+            items: List[Dict] = []
+            last_err = None
+            page = 0
+            next_body = dict(body)
+            while True:
+                try:
+                    r = requests.post(url, headers=headers, json=next_body, timeout=HTTP_TIMEOUT)
+                    if not r.ok:
+                        last_err = f"Google HTTP {r.status_code}: {r.text[:300]}"
+                        break
+                    data = r.json()
+                except Exception as ex:
+                    last_err = f"Google exception: {ex}"
+                    break
+                items.extend(data.get("places", []) or [])
+                token = data.get("nextPageToken") or data.get("next_page_token")
+                if not token or page >= 2:
+                    break
+                page += 1
+                next_body = dict(next_body)
+                next_body["pageToken"] = token
+                time.sleep(0.5)
+            return items, last_err
+
+        items, err1 = _call(biased_body)
+        if not items:
+            items, err2 = _call(base_body)
+            if err1 or err2:
+                st.caption(f"ℹ️ Google diagnostics — biased: {err1 or 'ok'}, unbiased: {err2 or 'ok'}")
+        return [{"_provider":"google","_raw":x} for x in items]
+
+class FoursquareProvider:
+    """
+    Thin wrapper around Foursquare Places API v3.
+    Uses /places/search with ll + radius + query.
+    """
+    def __init__(self, api_key: str, center: Tuple[float,float], radius_mi: int):
+        self.api_key = api_key
+        self.lat, self.lon = center
+        # FSQ radius max 100km; cap at 100k meters
+        self.radius_m = min(int(radius_mi * 1609.34), 100000)
+
+    def search(self, query: str) -> List[Dict]:
+        if not self.api_key:
+            return []
+        url = "https://api.foursquare.com/v3/places/search"
+        headers = {"Authorization": self.api_key, "Accept":"application/json", "User-Agent": UA}
+        params = {
+            "ll": f"{self.lat},{self.lon}",
+            "radius": self.radius_m,
+            "limit": 50,
+            "query": query
+        }
+        out: List[Dict] = []
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=HTTP_TIMEOUT)
+            if not r.ok:
+                st.caption(f"ℹ️ Foursquare HTTP {r.status_code}: {r.text[:200]}")
+                return []
+            data = r.json()
+            for it in data.get("results", []):
+                out.append({"_provider":"foursquare","_raw":it})
+        except Exception as ex:
+            st.caption(f"ℹ️ Foursquare exception: {ex}")
+        return out
+
+# ---------- Searcher ----------
 class EnhancedNavalSearcher:
     def __init__(self, config: SearchConfig):
         self.config = config
@@ -144,7 +252,6 @@ class EnhancedNavalSearcher:
         for key, coords in HUBS.items():
             if key in base_location.lower():
                 return coords
-        # fallback: approximate South Bend
         return HUBS['south bend']
 
     def _miles(self, lat: float, lon: float) -> float:
@@ -152,50 +259,11 @@ class EnhancedNavalSearcher:
             return 999.0
         if GEOPY_AVAILABLE:
             return round(geodesic((self.base_lat, self.base_lon), (lat, lon)).miles, 1)
-        # simple fallback
         lat_diff = abs(lat - self.base_lat)
         lon_diff = abs(lon - self.base_lon)
         return round(((lat_diff**2 + lon_diff**2) ** 0.5) * 69, 1)
 
-    # -------- Google Places (Text Search + locationBias) --------
-    def _places_text(self, query: str, api_key: str) -> List[Dict]:
-        url = "https://places.googleapis.com/v1/places:searchText"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": api_key,
-            "X-Goog-FieldMask": ("places.displayName,places.formattedAddress,places.location,places.types,"
-                                 "places.websiteUri,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus")
-        }
-        radius_m = int(self.config.radius_miles * 1609.34)
-        body = {
-            "textQuery": query,
-            "maxResultCount": 20,
-            "locationBias": {
-                "circle": {
-                    "center": {"latitude": self.base_lat, "longitude": self.base_lon},
-                    "radius": radius_m
-                }
-            }
-        }
-        out: List[Dict] = []
-        page = 0
-        while True:
-            try:
-                resp = requests.post(url, headers=headers, json=body, timeout=HTTP_TIMEOUT)
-                data = resp.json() if resp.ok else {}
-            except Exception:
-                data = {}
-            places = data.get("places", []) or []
-            out.extend(self._process_places(places, query))
-            token = data.get("nextPageToken") or data.get("next_page_token")
-            if not token or page >= 2:
-                break
-            page += 1
-            time.sleep(0.6)
-            body["pageToken"] = token
-        return out
-
-    # broaden naval / water-adjacent queries
+    # ---------- Queries ----------
     def _domain_queries(self, base: str) -> List[str]:
         return [
             # microelectronics
@@ -224,7 +292,6 @@ class EnhancedNavalSearcher:
         ]
 
     def _prime_queries(self, base: str) -> List[str]:
-        # search brand + office/site + procurement-ish
         q: List[str] = []
         variants = [
             "office", "supplier office", "supplier diversity", "business development",
@@ -233,45 +300,71 @@ class EnhancedNavalSearcher:
         for brand in PRIME_BRANDS:
             for v in variants:
                 q.append(f"{brand} {v} near {base}")
-            # pure brand search (office/facility)
             q.append(f"{brand} facility near {base}")
             q.append(f"{brand} site near {base}")
         return q
 
-    def _is_prime_office(self, name: str) -> bool:
+    def _is_prime_office_name(self, name: str) -> bool:
         n = name.lower()
         return any(b.lower() in n for b in PRIME_BRANDS)
 
-    def _process_places(self, places: List[Dict], query: str) -> List[Dict]:
-        items: List[Dict] = []
-        for p in places:
-            try:
-                name = p.get("displayName", {}).get("text", "Unknown")
-                types = p.get("types", []) or []
-                lat = p.get("location", {}).get("latitude", 0.0)
-                lon = p.get("location", {}).get("longitude", 0.0)
-                dist = self._miles(lat, lon)
+    # ---------- Normalization & scoring ----------
+    def _normalize_google(self, place: Dict, query: str) -> Optional[Dict]:
+        try:
+            name = (place.get("displayName", {}) or {}).get("text", "Unknown")
+            types = place.get("types", []) or []
+            lat = (place.get("location", {}) or {}).get("latitude", 0.0)
+            lon = (place.get("location", {}) or {}).get("longitude", 0.0)
+            dist = self._miles(lat, lon)
+            if dist > self.config.radius_miles:
+                return None
+            industry = ", ".join(types[:3]) if types else "Manufacturing/Office"
+            description = self._desc_from_query(types, query)
+            c = dict(
+                name=name, location=place.get("formattedAddress", "Unknown"), industry=industry,
+                description=description, size=self._size_from_name_reviews(name, place),
+                capabilities=self._caps_from_text(name, types, query),
+                lat=lat, lon=lon, website=place.get("websiteUri", "Not available"),
+                phone=place.get("nationalPhoneNumber", "Not available"),
+                rating=place.get("rating", 0.0), user_ratings_total=place.get("userRatingCount", 0),
+                distance_miles=dist, is_prime_office=self._is_prime_office_name(name)
+            )
+            c.update(self._score(c))
+            return self._normalize_defaults(c)
+        except Exception:
+            return None
 
-                if dist > self.config.radius_miles:
-                    continue  # keep results truly local
+    def _normalize_foursquare(self, it: Dict, query: str) -> Optional[Dict]:
+        try:
+            name = it.get("name") or "Unknown"
+            # location address
+            loc = it.get("location", {}) or {}
+            address = ", ".join([loc.get("address",""), loc.get("locality",""), loc.get("region",""), loc.get("postcode","")]).strip(", ").replace(" ,", ",")
+            geoc = (it.get("geocodes", {}) or {}).get("main", {}) or {}
+            lat = geoc.get("latitude", 0.0)
+            lon = geoc.get("longitude", 0.0)
+            dist = self._miles(lat, lon)
+            if dist > self.config.radius_miles:
+                return None
+            categories = [c.get("name","") for c in (it.get("categories") or [])]
+            industry = ", ".join(categories[:3]) if categories else "Business/Office"
+            website = (it.get("website") or it.get("link") or "Not available")
+            phone = (it.get("tel") or "Not available")
 
-                industry = ", ".join(types[:3]) if types else "Manufacturing/Office"
-                description = self._desc_from_query(types, query)
-
-                c = dict(
-                    name=name, location=p.get("formattedAddress", "Unknown"), industry=industry,
-                    description=description, size=self._size_from_place(name, p),
-                    capabilities=self._caps_from_text(name, types, query),
-                    lat=lat, lon=lon, website=p.get("websiteUri", "Not available"),
-                    phone=p.get("nationalPhoneNumber", "Not available"),
-                    rating=p.get("rating", 0.0), user_ratings_total=p.get("userRatingCount", 0),
-                    distance_miles=dist, is_prime_office=self._is_prime_office(name)
-                )
-                c.update(self._score(c))
-                items.append(self._normalize(c))
-            except Exception:
-                continue
-        return items
+            types = categories  # for capability extraction
+            description = self._desc_from_query(types, query)
+            c = dict(
+                name=name, location=address or "Unknown", industry=industry,
+                description=description, size="Small/Medium Business",  # FSQ lacks review counts
+                capabilities=self._caps_from_text(name, types, query),
+                lat=lat, lon=lon, website=website, phone=phone,
+                rating=0.0, user_ratings_total=0,
+                distance_miles=dist, is_prime_office=self._is_prime_office_name(name)
+            )
+            c.update(self._score(c))
+            return self._normalize_defaults(c)
+        except Exception:
+            return None
 
     def _desc_from_query(self, types: List[str], query: str) -> str:
         base = f"Type: {', '.join(types[:2]) if types else 'Manufacturing/Office'}"
@@ -284,7 +377,7 @@ class EnhancedNavalSearcher:
         if "office" in q: base += " · Prime Contractor Office"
         return base
 
-    def _size_from_place(self, name: str, p: Dict) -> str:
+    def _size_from_name_reviews(self, name: str, p: Dict) -> str:
         name_l = name.lower()
         reviews = p.get("userRatingCount", 0); rating = p.get("rating", 0.0)
         majors = ["honeywell","boeing","lockheed","raytheon","northrop","general dynamics","bae systems",
@@ -301,21 +394,16 @@ class EnhancedNavalSearcher:
         txt = " ".join([name.lower(), " ".join(types).lower(), query.lower()])
         caps = set()
         mapping = {
-            # naval/water
             "ship repair":"Ship Repair","dry dock":"Dry Dock","dockyard":"Dockyard",
             "shipbuilding":"Shipbuilding","shipyard":"Shipyard","marine":"Marine Engineering",
             "naval":"Naval Systems","maritime":"Maritime Systems","coast guard":"Coast Guard Support",
-            # microelectronics
             "microelectronics":"Microelectronics Manufacturing","semiconductor":"Semiconductor Design/Fab",
             "pcb":"PCB Manufacturing","electronics":"Electronics Manufacturing","radar":"Radar Systems",
             "sonar":"Sonar Systems","avionics":"Avionics Systems",
-            # mfg
             "cnc":"CNC Machining","machining":"Precision Machining","welding":"Welding Services",
             "fabrication":"Metal Fabrication","casting":"Metal Casting","forging":"Metal Forging",
             "additive":"3D Printing/Additive Manufacturing",
-            # automation
             "automation":"Industrial Automation","robotics":"Robotics Integration",
-            # prime office
             "office":"Prime Contractor Office"
         }
         for k,v in mapping.items():
@@ -345,15 +433,15 @@ class EnhancedNavalSearcher:
                             s["naval_score"]*1.5 + s["defense_score"]*1.2 + s["robotics_score"]*0.8 + quality)
         return s
 
-    def _normalize(self, c: Dict) -> Dict:
-        # ensure all keys for later DataFrames
+    def _normalize_defaults(self, c: Dict) -> Dict:
         defaults = {
             'name':'Unknown','location':'Unknown','distance_miles':999.0,'size':'Small Business',
             'industry':'Manufacturing/Office','total_score':0.0,'microelectronics_score':0.0,
             'naval_score':0.0,'defense_score':0.0,'manufacturing_score':0.0,'robotics_score':0.0,
             'rating':0.0,'user_ratings_total':0,'phone':'Not available','website':'Not available',
             'is_prime_office':False,'capabilities':[],'lat':0.0,'lon':0.0,
-            'poc_emails':[],'poc_emails_backup':[],'poc_contacts':[]
+            'poc_emails':[],'poc_emails_backup':[],'poc_contacts':[],
+            'sam_active': None, 'sam_uei': None, 'sam_cage': None
         }
         for k,v in defaults.items():
             c.setdefault(k,v)
@@ -382,7 +470,6 @@ class EnhancedNavalSearcher:
                 out.append(base_url + "/" + p)
             else:
                 out.append(base_url + p)
-        # unique preserve order
         seen=set(); uniq=[]
         for u in out:
             if u not in seen:
@@ -395,20 +482,15 @@ class EnhancedNavalSearcher:
         return sorted([e for e in raw if not any(j in e.lower() for j in junk)])
 
     def _extract_phones(self, html: str) -> List[str]:
-        # basic +1 (xxx) xxx-xxxx or xxx-xxx-xxxx
         phones = set(re.findall(r'(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', html))
         return sorted([p[0] if isinstance(p, tuple) else p for p in phones])
 
     def _extract_names_titles_near(self, html: str, anchors: List[str]) -> List[Dict]:
         contacts = []
         for a in anchors:
-            # find the anchor, take a window around it
             for m in re.finditer(re.escape(a), html, flags=re.I):
-                start = max(0, m.start()-400)
-                end   = min(len(html), m.end()+400)
+                start = max(0, m.start()-400); end = min(len(html), m.end()+400)
                 window = html[start:end]
-                # crude name/title patterns
-                # Name: words with capitals, Title keywords
                 name_m = re.findall(r'([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,2})', window)
                 title_m = re.findall(r'(Business Development|Supplier Diversity|Subcontracts|Procurement|Contracts|Supply Chain|Program Manager|Capture|BD)', window, flags=re.I)
                 name = None
@@ -418,7 +500,6 @@ class EnhancedNavalSearcher:
                 title = title_m[0] if title_m else None
                 if name or title:
                     contacts.append({"name": name, "title": title, "anchor": a})
-        # de-dup
         seen=set(); uniq=[]
         for c in contacts:
             key=(c.get("name"), c.get("title"))
@@ -441,18 +522,16 @@ class EnhancedNavalSearcher:
             primary_emails: List[str] = []
             backup_emails: List[str]  = []
             contacts: List[Dict] = []
-            if site and site.startswith("http"):
+            if site and isinstance(site, str) and site.startswith("http"):
                 for url in self._candidate_paths(site):
                     html = self._fetch_html(url)
                     if not html: continue
                     found_emails = self._extract_emails(html)
-                    found_phones = self._extract_phones(html)
-                    # prioritize supplier/procurement/BD mailboxes
+                    _ = self._extract_phones(html)  # (if you want to surface later)
                     pri = [e for e in found_emails if any(k in e.lower() for k in
                           ["supplier","procure","purchas","subcontract","bd","business","development","supplychain","supply"])]
                     if pri: primary_emails.extend(pri)
                     else:   backup_emails.extend(found_emails)
-                    # names/titles near emails or "supplier"/"business development" phrases
                     anchors = pri or ["supplier","business development","subcontracts","procurement","contracts","supply chain"]
                     contacts.extend(self._extract_names_titles_near(html, anchors))
                     if len(primary_emails)>=2 and contacts: break
@@ -468,38 +547,107 @@ class EnhancedNavalSearcher:
             if backup_emails:  r["poc_emails_backup"] = sorted(list(set(backup_emails)))[:3]
             if contacts:       r["poc_contacts"] = contacts
 
-    # -------- public entry --------
+    # ---------- SAM.gov enrichment ----------
+    def _sam_lookup(self, name: str, zipcode: Optional[str]) -> Dict:
+        """
+        Uses SAM.gov Entity API v2 (requires SAM_API_KEY).
+        We try name (and zip if we can regex it out of address).
+        """
+        out: Dict = {"sam_active": None, "sam_uei": None, "sam_cage": None}
+        if not SAM_API_KEY:
+            return out
+        try:
+            url = "https://api.sam.gov/entity-information/v2/entities"
+            params = {
+                "api_key": SAM_API_KEY,
+                "registryOnly": "true",
+                "entityRegistrationStatus": "Active",
+                "qterms": name
+            }
+            if zipcode:
+                params["physicalAddressZIP"] = zipcode
+            r = requests.get(url, params=params, timeout=HTTP_TIMEOUT)
+            if not r.ok:
+                return out
+            data = r.json()
+            ents = data.get("entityData", []) or data.get("entities", []) or []
+            if not ents:
+                return out
+            ent = ents[0]
+            # keys differ by version; try common ones
+            out["sam_active"] = True
+            out["sam_uei"] = ent.get("ueiSAM") or ent.get("entityData",{}).get("ueiSAM")
+            out["sam_cage"] = (ent.get("cage") or
+                               (ent.get("entityData",{}).get("cageList") or [{}])[0].get("cageCode"))
+            return out
+        except Exception:
+            return out
+
+    # ---------- Public entry ----------
     def run(self) -> List[Dict]:
-        api_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
-        if not api_key:
-            st.error("🔑 Google Places API key is REQUIRED.")
-            return []
+        # Providers (toggleable)
+        providers: List = []
+        if self.config.use_google:
+            g_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
+            if not g_key:
+                st.error("🔑 Google Places API key is REQUIRED when Google is enabled.")
+                return []
+            providers.append(GoogleProvider(g_key, (self.base_lat, self.base_lon), self.config.radius_miles))
+        pass
 
         all_queries = self._domain_queries(self.config.base_location) + self._prime_queries(self.config.base_location)
 
-        progress = st.progress(0.0)  # no text= to avoid SessionInfo error
+        progress = st.progress(0.0)
         status = st.empty()
+        results_raw: List[Dict] = []
 
-        results: List[Dict] = []
         for i, q in enumerate(all_queries, start=1):
             status.write(f"Searching ({i}/{len(all_queries)}): {q}")
-            results.extend(self._places_text(q, api_key))
+            for p in providers:
+                try:
+                    results_raw.extend(p.search(q))
+                except Exception as ex:
+                    st.caption(f"ℹ️ Provider error: {ex}")
             progress.progress(i/len(all_queries))
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         progress.empty(); status.empty()
 
-        # de-dup by (name + rounded coords)
+        # Normalize
+        normalized: List[Dict] = []
+        for item in results_raw:
+            prov = item.get("_provider")
+            raw = item.get("_raw", {})
+            if prov == "google":
+                norm = self._normalize_google(raw, query="")  # query not needed; desc built from types
+            elif prov == "foursquare":
+                norm = self._normalize_foursquare(raw, query="")
+            else:
+                norm = None
+            if norm:
+                normalized.append(norm)
+
+        # De-dup (name + rounded coords)
         unique: List[Dict] = []
         seen = set()
-        for r in results:
+        for r in normalized:
             key = (r.get("name","").lower().strip(), round(r.get("lat",0.0),3), round(r.get("lon",0.0),3))
             if key in seen: continue
             seen.add(key)
             unique.append(r)
 
-        # enrich POCs for primes
+        # POC enrichment for primes
         self.enrich_primes_with_pocs(unique)
+
+        # SAM.gov enrichment (toggle)
+        if self.config.use_samgov and SAM_API_KEY:
+            for r in unique:
+                # try to parse ZIP from location string
+                loc = r.get("location","")
+                zip_m = re.search(r'\b(\d{5})(?:-\d{4})?\b', loc)
+                zipcode = zip_m.group(1) if zip_m else None
+                info = self._sam_lookup(r.get("name",""), zipcode)
+                r.update({k:v for k,v in info.items() if v is not None})
 
         # sort & limit
         unique.sort(key=lambda x: x["total_score"], reverse=True)
@@ -512,20 +660,22 @@ def company_map(data: List[Dict], base_location: str):
     df = df[(df["lat"] != 0) & (df["lon"] != 0)]
     if df.empty: return None
 
-    base_lat, base_lon = HUBS.get(base_location.split(",")[0].lower(), HUBS["south bend"])
-    for k,(lat,lon) in HUBS.items():
-        if k in base_location.lower(): base_lat, base_lon = (lat,lon); break
+    base_key = base_location.split(",")[0].strip().lower()
+    base_lat, base_lon = HUBS.get(base_key, HUBS["south bend"])
 
     fig = go.Figure()
     fig.add_trace(go.Scattermapbox(
         lat=[base_lat], lon=[base_lon], mode="markers",
         marker=dict(size=18, color="blue"), text=[f"Search Center: {base_location}"], name="Base"
     ))
+
     hovers = []
     for _, r in df.iterrows():
         lines = [f"{'🏛️ PRIME ' if r.get('is_prime_office') else ''}{r['name']}",
                  f"Score {r['total_score']:.1f} · Micro {r['microelectronics_score']:.1f} · Naval {r['naval_score']:.1f}",
                  f"Dist {r['distance_miles']} mi"]
+        if r.get("sam_active"):
+            lines.append(f"SAM Active · CAGE {r.get('sam_cage') or ''} · UEI {r.get('sam_uei') or ''}")
         if r.get("poc_emails"): lines.append("POC: " + ", ".join(r["poc_emails"][:2]))
         if r.get("poc_contacts"):
             first = r["poc_contacts"][0]
@@ -574,19 +724,15 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
     cols = [
         'name','location','distance_miles','size','industry','total_score','microelectronics_score',
         'naval_score','defense_score','manufacturing_score','rating','user_ratings_total',
-        'phone','website','is_prime_office','poc_emails','poc_emails_backup','poc_contacts'
+        'phone','website','is_prime_office','poc_emails','poc_emails_backup','poc_contacts',
+        'sam_active','sam_uei','sam_cage'
     ]
     for c in cols:
         if c not in df.columns:
-            # choose reasonable defaults
-            if c in ('phone','website'):
-                df[c] = 'Not available'
-            elif c == 'is_prime_office':
-                df[c] = False
-            elif c in ('poc_emails','poc_emails_backup','poc_contacts'):
-                df[c] = [[] for _ in range(len(df))]
-            else:
-                df[c] = 0
+            if c in ('phone','website'): df[c] = 'Not available'
+            elif c == 'is_prime_office': df[c] = False
+            elif c in ('poc_emails','poc_emails_backup','poc_contacts'): df[c] = [[] for _ in range(len(df))]
+            else: df[c] = ""
 
     out = df[cols].copy()
     out = out.rename(columns={
@@ -596,10 +742,9 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
         'defense_score':'Defense Score','manufacturing_score':'Manufacturing Score',
         'rating':'Rating','user_ratings_total':'Review Count','phone':'Phone','website':'Website',
         'is_prime_office':'Prime Office','poc_emails':'POC Emails','poc_emails_backup':'POC Emails (Backup)',
-        'poc_contacts':'POC Contacts'
+        'poc_contacts':'POC Contacts','sam_active':'SAM Active','sam_uei':'SAM UEI','sam_cage':'CAGE'
     })
 
-    # flatten list-ish columns
     def _flatten(v):
         if isinstance(v, list):
             if v and isinstance(v[0], dict):
@@ -611,35 +756,29 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
         if c in out.columns:
             out[c] = out[c].apply(_flatten)
 
-    # --- Build workbook (use Any to satisfy static checker) ---
+    # Build workbook
     wb = Workbook()
-    ws: Any = wb.active  # cast to Any so Pylance doesn't think it's Optional/None
+    ws: Any = wb.active
     ws.title = "Naval Suppliers"
 
-    # Write header & rows
     for row in dataframe_to_rows(out, index=False, header=True):
         ws.append(row)
 
-    # Header style
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="1f2937")
-    # list(ws[1]) ensures subscription returns a list (avoids "not subscriptable" warning)
     for cell in list(ws[1]):
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
-    # Column widths
     widths = {
         "A":34,"B":28,"C":14,"D":20,"E":28,"F":12,"G":14,"H":12,"I":12,"J":12,
-        "K":8,"L":10,"M":18,"N":34,"O":12,"P":36,"Q":36,"R":36
+        "K":8,"L":10,"M":18,"N":34,"O":12,"P":36,"Q":36,"R":36,"S":12,"T":18,"U":12
     }
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
 
-    # Number formats
     numfmt = {"C":"0.0","F":"0.0","G":"0.0","H":"0.0","I":"0.0","J":"0.0","K":"0.0"}
-    # list(ws[col]) to keep type checker happy; skip header (row 1)
     for col, fmt in numfmt.items():
         for cell in list(ws[col])[1:]:
             cell.number_format = fmt
@@ -656,12 +795,28 @@ def main():
 
     # Sidebar
     st.sidebar.header("🔧 Search Configuration")
-    if not GOOGLE_PLACES_API_KEY:
-        st.sidebar.warning("No GOOGLE_PLACES_API_KEY in env.")
+
+    # API keys section
+    g_key_present = bool(GOOGLE_PLACES_API_KEY or st.session_state.get("api_key"))
+    fsq_present = bool(FOURSQUARE_API_KEY)
+    sam_present = bool(SAM_API_KEY)
+
+    if not g_key_present:
+        st.sidebar.warning("No GOOGLE_PLACES_API_KEY detected.")
         api = st.sidebar.text_input("Google Places API Key", type="password")
-        if api: st.session_state.api_key = api; st.sidebar.success("API key set.")
+        if api: st.session_state.api_key = api; st.sidebar.success("Google API key set.")
     else:
-        st.sidebar.success("Env API key detected.")
+        st.sidebar.success("Google key ready.")
+
+    if not fsq_present:
+        st.sidebar.info("Optional: set FOURSQUARE_API_KEY to enable Foursquare provider.")
+    else:
+        st.sidebar.success("Foursquare key ready.")
+
+    if not sam_present:
+        st.sidebar.info("Optional: set SAM_API_KEY to enable SAM.gov enrichment.")
+    else:
+        st.sidebar.success("SAM.gov key ready.")
 
     config = SearchConfig()
     presets = {
@@ -678,16 +833,34 @@ def main():
     config.radius_miles = st.sidebar.slider("Search Radius (miles)", 10, 150, 60)
     config.target_company_count = st.sidebar.slider("Max Entities", 10, 500, 250)
 
+    # Provider toggles
+    st.sidebar.subheader("Sources")
+    config.use_google = st.sidebar.checkbox("Google Places", value=True, help="Primary discovery source")
+    config.use_foursquare = False
+    config.use_samgov = st.sidebar.checkbox("SAM.gov enrichment", value=True and bool(SAM_API_KEY), help="Adds SAM active/UEI/CAGE if SAM_API_KEY is set")
+
     with st.sidebar:
         st.markdown("---")
         run = st.button("🔍 Run Search", type="primary")
-        if run:
-            st.session_state.search_triggered = True
-            st.session_state.companies = []
+        with st.expander("🛠 Diagnostics", expanded=False):
+            diag_run = st.button("Run quick test (CNC near base)")
+            if diag_run:
+                api_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
+                if not api_key:
+                    st.error("No Google API key loaded.")
+                else:
+                    searcher = EnhancedNavalSearcher(config)
+                    gp = GoogleProvider(api_key, (searcher.base_lat, searcher.base_lon), config.radius_miles)
+                    test = gp.search(f"CNC machining near {config.base_location}")
+                    st.write(f"Google test results: {len(test)} raw places")
 
     # Run search
+    if run:
+        st.session_state.search_triggered = True
+        st.session_state.companies = []
+
     if st.session_state.search_triggered:
-        with st.spinner("Running enhanced search (with location bias) and enriching POCs…"):
+        with st.spinner("Running multi-source search (Google/Foursquare) and enriching POCs/SAM…"):
             searcher = EnhancedNavalSearcher(config)
             data = searcher.run()
             st.session_state.companies = data
@@ -725,6 +898,7 @@ def main():
         st.info(f"Showing {len(filtered)} of {len(data)} entities")
         if not filtered:
             st.warning("No entities match the current filters.")
+
         for c in filtered:
             badge = "🔥 Exceptional" if c["total_score"]>=25 else "🟢 High" if c["total_score"]>=15 else "🟡 Good" if c["total_score"]>=10 else "🔴 Basic"
             title = f"{'🏛️ PRIME' if c.get('is_prime_office') else '🏭'} {c['name']} — {badge} (Score: {c['total_score']:.1f})"
@@ -743,12 +917,17 @@ def main():
                     st.write(f"📞 {c['phone']}")
                     st.write(f"🏢 Size: {c['size']}")
                     st.write(f"📏 Distance: {c['distance_miles']} mi")
+                    if c.get("sam_active"):
+                        st.write(f"✅ SAM Active — CAGE: {c.get('sam_cage') or '—'} · UEI: {c.get('sam_uei') or '—'}")
                 with b:
                     st.markdown("**Capabilities**")
                     for cap in c["capabilities"]: st.write(f"• {cap}")
                     st.markdown("**Quality**")
                     st.write(f"⭐ {c['rating']:.1f} ({c['user_ratings_total']} reviews)")
+
                 st.markdown(f"**Description:** {c['description']}")
+
+                # POCs
                 if c.get("is_prime_office") or c.get("poc_emails") or c.get("poc_emails_backup") or c.get("poc_contacts"):
                     st.markdown("**📇 Points of Contact**")
                     if c.get("poc_contacts"):
@@ -759,6 +938,16 @@ def main():
                     if c.get("poc_emails_backup"):
                         back = c["poc_emails_backup"]
                         st.write("Backup:", ", ".join(back) if isinstance(back,list) else back)
+
+                # Quick-links for named roles (manual, ToS-safe)
+                base_name = c['name']
+                city_hint = c['location'].split(",")[0]
+                role_terms = '("Business Development" OR "Supplier Diversity" OR Subcontracts OR Procurement OR "Supply Chain")'
+                gq = f'{base_name} {role_terms} {city_hint}'
+                lq = f'{base_name} ("Business Development" OR "Supplier Diversity" OR Subcontracts OR Procurement OR "Supply Chain") {city_hint}'
+                g_url = f'https://www.google.com/search?q={quote(gq)}'
+                li_url = f'https://www.google.com/search?q={quote("site:linkedin.com " + lq)}'
+                st.markdown(f'[🔎 Google POC search]({g_url}) &nbsp;|&nbsp; [🔗 LinkedIn POC (via Google)]({li_url})', unsafe_allow_html=True)
 
     with tab2:
         st.subheader("🗺️ Map")
@@ -799,13 +988,10 @@ def main():
                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
                 st.warning("openpyxl not available — falling back to CSV.")
-                csv = '\ufeff' + df.to_csv(index=False)  # add UTF-8 BOM so Excel opens cleanly
-                st.download_button(
-                    "📥 Download CSV",
-                    data=csv,
-                    file_name=f"naval_suppliers_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv"
-                )
+                csv = '\ufeff' + df.to_csv(index=False)  # UTF-8 BOM for Excel
+                st.download_button("📥 Download CSV", data=csv,
+                                   file_name=f"naval_suppliers_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                   mime="text/csv")
 
 if __name__ == "__main__":
     main()
