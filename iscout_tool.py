@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 from urllib.parse import quote, quote_plus, urlencode
-
 import pandas as pd
 import requests
 import streamlit as st
@@ -21,9 +20,16 @@ try:
     from openpyxl import Workbook
     from openpyxl.utils.dataframe import dataframe_to_rows
     from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.utils import get_column_letter  # for column widths
     OPENPYXL_AVAILABLE = True
 except Exception:
     OPENPYXL_AVAILABLE = False
+
+try:
+    import xlsxwriter  # noqa: F401
+    XLSXWRITER_AVAILABLE = True
+except Exception:
+    XLSXWRITER_AVAILABLE = False
 
 try:
     from geopy.distance import geodesic
@@ -145,6 +151,28 @@ MANUFACTURING_WEIGHTS = {
 DEFENSE_WEIGHTS = {'defense contractor': 15, 'military contractor': 12, 'aerospace': 10,
                     'defense systems': 12, 'military systems': 10, 'government contracting': 8}
 ROBOTICS_WEIGHTS = {'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8}
+
+IRRELEVANT_KEYWORDS = [
+    "recruiting", "career center", "armed forces", "national guard", "reserve center",
+    "best buy", "walmart", "target", "gamestop", "staples", "office depot",
+    "bank", "atm", "pharmacy", "hospital", "clinic", "school", "university",
+    "restaurant", "bar", "hotel", "motel", "apartment", "realty", "insurance",
+    "auto parts", "car dealership", "tire", "gas station", "church", "salon",
+]
+IRRELEVANT_TYPES = [
+    "electronics_store","department_store","shopping_mall","supermarket","clothing_store",
+    "grocery_or_supermarket","hardware_store","home_goods_store","furniture_store","bakery",
+    "bar","restaurant","cafe","school","university","bank","atm","church","hospital",
+    "pharmacy","lodging","hair_care","beauty_salon","gym","movie_theater","tourist_attraction",
+    "real_estate_agency","car_dealer","car_repair","gas_station","convenience_store"
+]
+RELEVANT_HINTS = [
+    # manufacturing / defense / marine / electronics
+    "manufactur","machine","fabrication","welding","cnc","precision","metal","foundry","forge",
+    "assembly","defense","aerospace","naval","marine","ship","shipyard","dock","submarine",
+    "electronics","microelectronics","semiconductor","pcb","radar","sonar","avionics","rf",
+    "automation","robotics","controls","integration","systems","contract manufacturer",
+]
 
 # ---- Relevance rules ----
 EXCLUDE_NAME_PATTERNS = [
@@ -296,6 +324,19 @@ class EnhancedNavalSearcher:
                 return coords
         return HUBS['south bend']
 
+    def _is_relevant(self, name: str, types: List[str]) -> bool:
+        name_l = (name or "").lower()
+        types_l = " ".join(types or []).lower()
+        blob = f"{name_l} {types_l}"
+
+        if any(bad in blob for bad in IRRELEVANT_KEYWORDS):
+            return False
+        if any(t in types_l for t in IRRELEVANT_TYPES):
+            return False
+
+        # must have at least one relevant hint
+        return any(h in blob for h in RELEVANT_HINTS)
+
     def _miles(self, lat: float, lon: float) -> float:
         if not lat or not lon:
             return 999.0
@@ -373,12 +414,9 @@ class EnhancedNavalSearcher:
         try:
             name = (place.get("displayName", {}) or {}).get("text", "Unknown")
             types = place.get("types", []) or []
-            # prefer only operational businesses if available
-            biz_status = (place.get("businessStatus") or "").upper()
-            if biz_status and biz_status != "OPERATIONAL":
-                return None
 
-            if not self._is_relevant_business(name, types, query):
+            # NEW: relevance gate
+            if not self._is_relevant(name, types):
                 return None
 
             lat = (place.get("location", {}) or {}).get("latitude", 0.0)
@@ -400,16 +438,19 @@ class EnhancedNavalSearcher:
             )
             c.update(self._score(c))
             c = self._normalize_defaults(c)
-            c = self._validate_prime_office(c)  # require brand domain alignment for primes
+            c = self._validate_prime_office(c)   # NEW: downgrade false prime offices
             return c
         except Exception:
             return None
+
 
     def _normalize_foursquare(self, it: Dict, query: str) -> Optional[Dict]:
         try:
             name = it.get("name") or "Unknown"
             categories = [c.get("name","") for c in (it.get("categories") or [])]
-            if not self._is_relevant_business(name, categories, query):
+
+            # NEW: relevance gate
+            if not self._is_relevant(name, categories):
                 return None
 
             loc = it.get("location", {}) or {}
@@ -437,10 +478,11 @@ class EnhancedNavalSearcher:
             )
             c.update(self._score(c))
             c = self._normalize_defaults(c)
-            c = self._validate_prime_office(c)
+            c = self._validate_prime_office(c)   # NEW
             return c
         except Exception:
             return None
+
 
     def _desc_from_query(self, types: List[str], query: str) -> str:
         base = f"Type: {', '.join(types[:2]) if types else 'Manufacturing/Office'}"
@@ -862,12 +904,10 @@ def metrics_html(data: List[Dict]) -> str:
 
 def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
     """
-    Build a styled Excel workbook in-memory.
-    Returns bytes if openpyxl is available, otherwise None (caller falls back to CSV).
+    Build an Excel workbook in-memory.
+    Prefers openpyxl (styled). Falls back to xlsxwriter if openpyxl is missing.
+    Returns bytes, or None if neither engine is available.
     """
-    if not OPENPYXL_AVAILABLE:
-        return None
-
     # Ensure all expected columns exist
     cols = [
         'name','location','distance_miles','size','industry','total_score','microelectronics_score',
@@ -897,43 +937,57 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
         if isinstance(v, list):
             if v and isinstance(v[0], dict):
                 return ", ".join([f"{x.get('name','')}{' ('+x.get('title','')+')' if x.get('title') else ''}" for x in v])
-            return ", ".join(map(str, v))
-        return v
+        return ", ".join(map(str, v)) if isinstance(v, list) else v
 
     for c in ('POC Emails','POC Emails (Backup)','POC Contacts'):
         if c in out.columns:
             out[c] = out[c].apply(_flatten)
 
-    # Build workbook
-    wb = Workbook()
-    ws: Any = wb.active
-    ws.title = "Naval Suppliers"
+    widths = [34,28,14,20,28,12,14,12,12,12,8,10,18,34,12,36,36,36,12,18,12]
 
-    for row in dataframe_to_rows(out, index=False, header=True):
-        ws.append(row)
+    # Preferred: openpyxl with styling
+    if OPENPYXL_AVAILABLE:
+        from typing import Any  # ensure available here too
 
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="1f2937")
-    for cell in list(ws[1]):
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center")
+        wb = Workbook()
+        ws: Any = wb.active  # <-- make worksheet type-explicit for Pylance
+        ws.title = "Naval Suppliers"
 
-    widths = {
-        "A":34,"B":28,"C":14,"D":20,"E":28,"F":12,"G":14,"H":12,"I":12,"J":12,
-        "K":8,"L":10,"M":18,"N":34,"O":12,"P":36,"Q":36,"R":36,"S":12,"T":18,"U":12
-    }
-    for col, w in widths.items():
-        ws.column_dimensions[col].width = w
+        for row in dataframe_to_rows(out, index=False, header=True):
+            ws.append(row)
 
-    numfmt = {"C":"0.0","F":"0.0","G":"0.0","H":"0.0","I":"0.0","J":"0.0","K":"0.0"}
-    for col, fmt in numfmt.items():
-        for cell in list(ws[col])[1:]:
-            cell.number_format = fmt
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="1f2937")
+        for cell in list(ws[1]):
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
 
-    bio = io.BytesIO()
-    wb.save(bio)
-    return bio.getvalue()
+        # set widths with get_column_letter
+        for idx, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = w
+
+        # number formats
+        numfmt = {"C":"0.0","F":"0.0","G":"0.0","H":"0.0","I":"0.0","J":"0.0","K":"0.0"}
+        for col_letter, fmt in numfmt.items():
+            for cell in list(ws[col_letter])[1:]:  # skip header
+                cell.number_format = fmt
+
+        bio = io.BytesIO()
+        wb.save(bio)
+        return bio.getvalue()
+
+    # Fallback: xlsxwriter (no heavy styling, but real .xlsx)
+    if XLSXWRITER_AVAILABLE:
+        bio = io.BytesIO()
+        with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
+            out.to_excel(writer, index=False, sheet_name="Naval Suppliers")
+            ws = writer.sheets["Naval Suppliers"]
+            for i, w in enumerate(widths):
+                ws.set_column(i, i, w)
+        return bio.getvalue()
+
+    return None
 
 def build_poc_search_links(name: str, location: str) -> Dict[str, str]:
         """
