@@ -146,6 +146,48 @@ DEFENSE_WEIGHTS = {'defense contractor': 15, 'military contractor': 12, 'aerospa
                     'defense systems': 12, 'military systems': 10, 'government contracting': 8}
 ROBOTICS_WEIGHTS = {'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8}
 
+# ---- Relevance rules ----
+EXCLUDE_NAME_PATTERNS = [
+    r"\brecruit(ing|er|ment)\b",
+    r"\bar( my|my )?recruit(ing|ment)\b",
+    r"\barmed forces\b",
+    r"\b(navy|army|air force|marines)\s+recruit(ing|ment)\b",
+    r"\b(best buy|walmart|target|lowe'?s|home depot|ikea)\b",
+    r"\b(verizon|t-mobile|at&t)\b",
+    r"\b(bank|credit union)\b",
+    r"\b(restaurant|bar|cafe|coffee|bakery|pizza|grill|pub|diner)\b",
+    r"\b(hotel|motel|inn|resort)\b",
+    r"\b(pharmacy|clinic|hospital|dentist|chiropractic)\b",
+    r"\b(real estate|realtor|apartment|property management)\b",
+    r"\b(gym|fitness|yoga|pilates)\b",
+    r"\b(salon|spa|nails|barber)\b",
+    r"\b(daycare|school|college|university)\b",
+    r"\b(car dealer|auto sales|used cars|oil change|tire|body shop)\b",
+    r"\b(church|temple|mosque)\b",
+]
+
+EXCLUDE_TYPES = {
+    # general consumer / retail / services
+    "restaurant","cafe","bar","bakery","meal_takeaway","supermarket","store","shopping_mall",
+    "clothing_store","shoe_store","jewelry_store","home_goods_store","book_store","electronics_store",
+    "furniture_store","pet_store","department_store",
+    "bank","atm","insurance_agency","real_estate_agency","lodging","gas_station","car_wash",
+    "car_repair","car_dealer","pharmacy","drugstore","doctor","dentist","hospital","health",
+    "hair_care","beauty_salon","spa","gym","stadium","movie_theater",
+    "school","university","church","place_of_worship","park","zoo","museum",
+    # gov recruiting / unrelated
+    "local_government_office","courthouse","police","post_office","embassy",
+    "recruiting_office","military_recruiting_office"
+}
+
+REQUIRED_HINTS = [
+    "manufactur","machin","cnc","fabri","weld","casting","forging",
+    "semiconductor","microelectron","pcb","electronics","radar","sonar","avionics",
+    "ship","shipyard","shipbuild","dry dock","dockyard","marine","naval","maritime",
+    "aerospace","defense","subcontract","supplier","assembly","tool and die","injection molding",
+    "automation","robot"
+]
+
 # ---------- Providers ----------
 class GoogleProvider:
     def __init__(self, api_key: str, center: Tuple[float,float], radius_mi: int):
@@ -308,16 +350,43 @@ class EnhancedNavalSearcher:
         n = name.lower()
         return any(b.lower() in n for b in PRIME_BRANDS)
 
+    def _is_relevant_business(self, name: str, types: List[str], query: str) -> bool:
+        """Hard filter out obvious non-targets and require at least one relevant hint."""
+        n = (name or "").lower()
+        t = " ".join(types or []).lower()
+        q = (query or "").lower()
+
+        # exclude by types (Google types are snake_case; we compare lowercase)
+        if any(tp.lower() in EXCLUDE_TYPES for tp in types or []):
+            return False
+
+        # exclude by name patterns (retail, recruiting, banks, etc.)
+        for pat in EXCLUDE_NAME_PATTERNS:
+            if re.search(pat, n, flags=re.I):
+                return False
+
+        blob = " ".join([n, t, q])
+        return any(h in blob for h in REQUIRED_HINTS)
+
     # ---------- Normalization & scoring ----------
     def _normalize_google(self, place: Dict, query: str) -> Optional[Dict]:
         try:
             name = (place.get("displayName", {}) or {}).get("text", "Unknown")
             types = place.get("types", []) or []
+            # prefer only operational businesses if available
+            biz_status = (place.get("businessStatus") or "").upper()
+            if biz_status and biz_status != "OPERATIONAL":
+                return None
+
+            if not self._is_relevant_business(name, types, query):
+                return None
+
             lat = (place.get("location", {}) or {}).get("latitude", 0.0)
             lon = (place.get("location", {}) or {}).get("longitude", 0.0)
             dist = self._miles(lat, lon)
             if dist > self.config.radius_miles:
                 return None
+
             industry = ", ".join(types[:3]) if types else "Manufacturing/Office"
             description = self._desc_from_query(types, query)
             c = dict(
@@ -330,14 +399,19 @@ class EnhancedNavalSearcher:
                 distance_miles=dist, is_prime_office=self._is_prime_office_name(name)
             )
             c.update(self._score(c))
-            return self._normalize_defaults(c)
+            c = self._normalize_defaults(c)
+            c = self._validate_prime_office(c)  # require brand domain alignment for primes
+            return c
         except Exception:
             return None
 
     def _normalize_foursquare(self, it: Dict, query: str) -> Optional[Dict]:
         try:
             name = it.get("name") or "Unknown"
-            # location address
+            categories = [c.get("name","") for c in (it.get("categories") or [])]
+            if not self._is_relevant_business(name, categories, query):
+                return None
+
             loc = it.get("location", {}) or {}
             address = ", ".join([loc.get("address",""), loc.get("locality",""), loc.get("region",""), loc.get("postcode","")]).strip(", ").replace(" ,", ",")
             geoc = (it.get("geocodes", {}) or {}).get("main", {}) or {}
@@ -346,23 +420,25 @@ class EnhancedNavalSearcher:
             dist = self._miles(lat, lon)
             if dist > self.config.radius_miles:
                 return None
-            categories = [c.get("name","") for c in (it.get("categories") or [])]
+
             industry = ", ".join(categories[:3]) if categories else "Business/Office"
             website = (it.get("website") or it.get("link") or "Not available")
             phone = (it.get("tel") or "Not available")
 
-            types = categories  # for capability extraction
+            types = categories
             description = self._desc_from_query(types, query)
             c = dict(
                 name=name, location=address or "Unknown", industry=industry,
-                description=description, size="Small/Medium Business",  # FSQ lacks review counts
+                description=description, size="Small/Medium Business",
                 capabilities=self._caps_from_text(name, types, query),
                 lat=lat, lon=lon, website=website, phone=phone,
                 rating=0.0, user_ratings_total=0,
                 distance_miles=dist, is_prime_office=self._is_prime_office_name(name)
             )
             c.update(self._score(c))
-            return self._normalize_defaults(c)
+            c = self._normalize_defaults(c)
+            c = self._validate_prime_office(c)
+            return c
         except Exception:
             return None
 
@@ -649,7 +725,6 @@ class EnhancedNavalSearcher:
             for p in providers:
                 try:
                     hits = p.search(q)
-                    # tag each hit with the originating query
                     for h in hits:
                         h["_q"] = q
                         results_raw.append(h)
@@ -665,7 +740,7 @@ class EnhancedNavalSearcher:
         for item in results_raw:
             prov = item.get("_provider")
             raw = item.get("_raw", {})
-            q = item.get("_q", "")  # <-- carry the real query
+            q = item.get("_q", "")  
             if prov == "google":
                 norm = self._normalize_google(raw, query=q)
             elif prov == "foursquare":
@@ -673,7 +748,6 @@ class EnhancedNavalSearcher:
             else:
                 norm = None
             if norm:
-                # ensure prime offices are real (domain check)
                 norm = self._validate_prime_office(norm)
                 normalized.append(norm)
 
