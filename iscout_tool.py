@@ -139,7 +139,7 @@ MICROELECTRONICS_WEIGHTS = {
 }
 NAVAL_WEIGHTS = {
     "shipbuilding": 25, "naval shipyard": 28, "hull fabrication": 20,
-    "marine engineering": 18, "submarine": 25, "naval systems": 22,
+    "marine engineering": 18, "submarine": 25, "naval systems": 26,
     "maritime": 15, "shipyard": 20, "vessel": 12, "marine": 12,
     "navy": 20, "naval": 18, "coast guard": 16, "dry dock": 22, "ship repair": 20, "dockyard": 16
 }
@@ -148,8 +148,8 @@ MANUFACTURING_WEIGHTS = {
     'welding': 6, 'manufacturing': 8, 'aerospace manufacturing': 12,
     'defense manufacturing': 10, 'additive manufacturing': 8
 }
-DEFENSE_WEIGHTS = {'defense contractor': 15, 'military contractor': 12, 'aerospace': 10,
-                    'defense systems': 12, 'military systems': 10, 'government contracting': 8}
+DEFENSE_WEIGHTS = {'defense contractor': 18, 'military contractor': 12, 'aerospace': 10,
+                    'defense systems': 12, 'military systems': 10, 'government contracting': 12}
 ROBOTICS_WEIGHTS = {'robotics': 10, 'automation': 8, 'robotic systems': 10, 'industrial automation': 8}
 
 IRRELEVANT_KEYWORDS = [
@@ -192,6 +192,9 @@ EXCLUDE_NAME_PATTERNS = [
     r"\b(daycare|school|college|university)\b",
     r"\b(car dealer|auto sales|used cars|oil change|tire|body shop)\b",
     r"\b(church|temple|mosque)\b",
+    r"\b(usmc|marine corps)\b",
+    r"\breserve\b",
+    r"\b(shell|bp|chevron)\b",
 ]
 
 EXCLUDE_TYPES = {
@@ -202,14 +205,16 @@ EXCLUDE_TYPES = {
     "bank","atm","insurance_agency","real_estate_agency","lodging","gas_station","car_wash",
     "car_repair","car_dealer","pharmacy","drugstore","doctor","dentist","hospital","health",
     "hair_care","beauty_salon","spa","gym","stadium","movie_theater",
-    "school","university","church","place_of_worship","park","zoo","museum",
+    "school","university","church","place_of_worship","park","zoo","museum", "Fed Ex", "tourist_attraction",
+    "storage","moving_company","courier","shipping","post_office"
+
     # gov recruiting / unrelated
     "local_government_office","courthouse","police","post_office","embassy",
-    "recruiting_office","military_recruiting_office"
+    "recruiting_office","military_recruiting_office", "US Marine Corps Reserve",
 }
 
 REQUIRED_HINTS = [
-    "manufactur","machin","cnc","fabri","weld","casting","forging",
+    "manufactur","machine","cnc","fabric","weld","casting","forging",
     "semiconductor","microelectron","pcb","electronics","radar","sonar","avionics",
     "ship","shipyard","shipbuild","dry dock","dockyard","marine","naval","maritime",
     "aerospace","defense","subcontract","supplier","assembly","tool and die","injection molding",
@@ -325,17 +330,24 @@ class EnhancedNavalSearcher:
         return HUBS['south bend']
 
     def _is_relevant(self, name: str, types: List[str]) -> bool:
+        """Hard-exclude obvious junk; otherwise require a hint OR a prime brand name."""
         name_l = (name or "").lower()
         types_l = " ".join(types or []).lower()
         blob = f"{name_l} {types_l}"
 
+        # hard excludes by keywords and by types
         if any(bad in blob for bad in IRRELEVANT_KEYWORDS):
             return False
         if any(t in types_l for t in IRRELEVANT_TYPES):
             return False
 
-        # must have at least one relevant hint
+        # allow if it looks like a prime office by name
+        if self._is_prime_office_name(name):
+            return True
+
+        # otherwise, require at least one relevant hint
         return any(h in blob for h in RELEVANT_HINTS)
+
 
     def _miles(self, lat: float, lon: float) -> float:
         if not lat or not lon:
@@ -352,7 +364,7 @@ class EnhancedNavalSearcher:
             # microelectronics
             f"microelectronics manufacturing near {base}",
             f"semiconductor companies near {base}",
-            f"electronics manufacturing near {base}",
+            f"electronics manufacturing company near {base}",
             f"PCB manufacturing near {base}",
             f"naval electronics near {base}", f"radar systems near {base}", f"sonar electronics near {base}",
             # naval / water adjacencies
@@ -363,8 +375,8 @@ class EnhancedNavalSearcher:
             f"defense contractor manufacturing near {base}", f"aerospace manufacturing near {base}",
             f"military equipment manufacturer near {base}", f"naval systems manufacturer near {base}",
             # core mfg
-            f"CNC machining services near {base}", f"precision machining near {base}",
-            f"metal fabrication shop near {base}", f"contract manufacturing near {base}",
+            f"CNC machining manufacturer near {base}", f"precision machining near {base}",
+            f"metal fabrication manufacturer near {base}", f"contract manufacturing near {base}",
             f"additive manufacturing near {base}",
             # automation
             f"robotics manufacturer near {base}", f"automation systems near {base}",
@@ -385,6 +397,8 @@ class EnhancedNavalSearcher:
                 q.append(f"{brand} {v} near {base}")
             q.append(f"{brand} facility near {base}")
             q.append(f"{brand} site near {base}")
+            q.append(f"{brand} supplier diversity contact near {base}")
+            q.append(f"{brand} business development office near {base}")
         return q
 
     def _is_prime_office_name(self, name: str) -> bool:
