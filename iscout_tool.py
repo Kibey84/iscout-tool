@@ -128,6 +128,15 @@ class SearchConfig:
     use_foursquare: bool = True
     use_samgov: bool = True
 
+    use_usaspending: bool = True
+    usaspending_state: str = "VA"        
+    usaspending_city: str = ""           
+    usaspending_zip5: str = ""           
+    usaspending_keywords: str = "ship, naval, electronics, cnc"
+    usaspending_award_types: List[str] = field(default_factory=lambda: ["A","B","C","D"])  
+    usaspending_fy_from: int = 2021      
+    usaspending_fy_to: int = datetime.now().year
+
 MICROELECTRONICS_WEIGHTS = {
     "microelectronics": 25, "semiconductor": 20, "pcb manufacturing": 18,
     "electronics manufacturing": 15, "integrated circuits": 18, "ic design": 20,
@@ -316,6 +325,86 @@ class FoursquareProvider:
         except Exception as ex:
             st.caption(f"ℹ️ Foursquare exception: {ex}")
         return out
+    
+class USASpendingProvider:
+    """
+    Minimal USAspending search using /api/v2/search/spending_by_award (POST).
+    We filter by place of performance (state/city/zip), fiscal years, keywords, and award type codes.
+
+    Note: USAspending requires no auth. We keep payload conservative and paginate a bit.
+    """
+    BASE = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+
+    def __init__(self, state: str, city: str, zip5: str, fy_from: int, fy_to: int,
+                 keywords: str, award_type_codes: List[str]):
+        self.state = (state or "").strip().upper()
+        self.city = (city or "").strip()
+        self.zip5 = (zip5 or "").strip()
+        self.fy_from = fy_from
+        self.fy_to = fy_to
+        self.keywords = [k.strip() for k in (keywords or "").split(",") if k.strip()]
+        self.award_type_codes = award_type_codes or ["A","B","C","D"]
+
+    def _filters(self) -> Dict:
+        place_filters: Dict[str, Any] = {}
+        if self.state:
+            place_filters["place_of_performance_locations"] = [{"country": "USA", "state": self.state}]
+        if self.city:
+            place_filters.setdefault("place_of_performance_locations", [{"country": "USA"}])
+            place_filters["place_of_performance_locations"][0]["city"] = self.city
+        if self.zip5:
+            place_filters.setdefault("place_of_performance_locations", [{"country": "USA"}])
+            place_filters["place_of_performance_locations"][0]["zip"] = self.zip5
+
+        time_period = [{"start_date": f"{self.fy_from}-10-01", "end_date": f"{self.fy_to}-09-30"}]
+
+        kw_filter = []
+        for k in self.keywords:
+            kw_filter.append({"simple_search": {"query": k}})
+
+        filters: Dict[str, Any] = {
+            "time_period": time_period,
+            "award_type_codes": self.award_type_codes,
+        }
+        filters.update(place_filters)
+
+        if kw_filter:
+            filters["keywords"] = self.keywords 
+        return filters
+
+    def search(self, page_limit: int = 2, page_size: int = 100) -> List[Dict]:
+        out: List[Dict] = []
+        payload = {
+            "fields": [
+                "Award ID", "Recipient Name", "Recipient UEI", "Recipient DUNS",
+                "Award Amount", "Awarding Agency", "Funding Agency",
+                "Place of Performance City", "Place of Performance State Code",
+                "Place of Performance Zip5", "Award Type", "Description"
+            ],
+            "filters": self._filters(),
+            "page": 1,
+            "limit": page_size,
+            "sort": "Award Amount",
+            "order": "desc"
+        }
+        headers = {"Content-Type": "application/json", "User-Agent": UA}
+        for p in range(1, page_limit + 1):
+            payload["page"] = p
+            try:
+                r = requests.post(self.BASE, headers=headers, json=payload, timeout=HTTP_TIMEOUT)
+                if not r.ok:
+                    st.caption(f"ℹ️ USAspending HTTP {r.status_code}: {r.text[:250]}")
+                    break
+                data = r.json() or {}
+                results = data.get("results") or []
+                for row in results:
+                    out.append({"_provider":"usaspending","_raw":row})
+                if len(results) < page_size:
+                    break  # last page
+            except Exception as ex:
+                st.caption(f"ℹ️ USAspending exception: {ex}")
+                break
+        return out
 
 # ---------- Searcher ----------
 class EnhancedNavalSearcher:
@@ -347,7 +436,6 @@ class EnhancedNavalSearcher:
 
         # otherwise, require at least one relevant hint
         return any(h in blob for h in RELEVANT_HINTS)
-
 
     def _miles(self, lat: float, lon: float) -> float:
         if not lat or not lon:
@@ -457,6 +545,74 @@ class EnhancedNavalSearcher:
         except Exception:
             return None
 
+    @staticmethod
+    def _f(v: Any) -> float:
+        """Safe float coercion for mixed/dirty values."""
+        try:
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, str):
+                v = v.strip()
+                if v == "":
+                    return 0.0
+                return float(v)
+        except Exception:
+            pass
+        return 0.0
+
+    def _normalize_usaspending(self, row: Dict) -> Optional[Dict]:
+        try:
+            # USAspending keys are label-based in this endpoint's response
+            name = row.get("Recipient Name") or "Unknown"
+            city = row.get("Place of Performance City") or ""
+            state = row.get("Place of Performance State Code") or ""
+            zip5 = row.get("Place of Performance Zip5") or ""
+            loc = ", ".join([p for p in [city, state, zip5] if p]).strip(", ")
+            try:
+                award_amt = float(row.get("Award Amount") or 0)
+            except Exception:
+                award_amt = 0.0
+            desc = row.get("Description") or ""
+            award_type = row.get("Award Type") or "Contract"
+            agency = row.get("Awarding Agency") or ""
+
+            # No lat/lon from USAspending; leave 0. Map tab will ignore 0s.
+            c = dict(
+                name=str(name),
+                location=loc or state or "—",
+                industry="Gov Contract Award",
+                description=f"USAspending award · {award_type} · {agency} · ${award_amt:,.0f}",
+                size="Small/Medium Business",  # unknown; keep neutral
+                capabilities=self._caps_from_text(name, [desc, award_type, agency], desc),
+                lat=0.0, lon=0.0,
+                website="Not available", phone="Not available",
+                rating=0.0, user_ratings_total=0,
+                distance_miles=999.0,  # unknown; sorted by score not distance
+                is_prime_office=False,
+                is_gov_contractor=True,
+                usaspending_award_amount=award_amt,
+                usaspending_agency=agency,
+                usaspending_award_type=award_type,
+            )
+
+            # Score bump by award keywords + amount
+            base = self._score(c)
+            amt_boost = 0
+            try:
+                if float(award_amt) >= 1_000_000: amt_boost = 6
+                elif float(award_amt) >= 250_000: amt_boost = 3
+                elif float(award_amt) >= 50_000: amt_boost = 1
+            except Exception:
+                pass
+            c.update(base)
+            c["defense_score"] = self._f(c.get("defense_score")) + 4.0  # contracts imply defense relevance
+            c["total_score"]   = self._f(c.get("total_score")) + float(amt_boost)
+
+            # default columns
+            c = self._normalize_defaults(c)
+            return c
+        except Exception:
+            return None
 
     def _normalize_foursquare(self, it: Dict, query: str) -> Optional[Dict]:
         try:
@@ -496,7 +652,6 @@ class EnhancedNavalSearcher:
             return c
         except Exception:
             return None
-
 
     def _desc_from_query(self, types: List[str], query: str) -> str:
         base = f"Type: {', '.join(types[:2]) if types else 'Manufacturing/Office'}"
@@ -573,7 +728,8 @@ class EnhancedNavalSearcher:
             'rating':0.0,'user_ratings_total':0,'phone':'Not available','website':'Not available',
             'is_prime_office':False,'capabilities':[],'lat':0.0,'lon':0.0,
             'poc_emails':[],'poc_emails_backup':[],'poc_contacts':[],
-            'sam_active': None, 'sam_uei': None, 'sam_cage': None
+            'sam_active': None, 'sam_uei': None, 'sam_cage': None, 'is_gov_contractor': False, 'usaspending_award_amount': 0.0,
+            'usaspending_agency': '', 'usaspending_award_type': '',
         }
         for k,v in defaults.items():
             c.setdefault(k,v)
@@ -768,7 +924,24 @@ class EnhancedNavalSearcher:
                 st.error("🔑 Google Places API key is REQUIRED when Google is enabled.")
                 return []
             providers.append(GoogleProvider(g_key, (self.base_lat, self.base_lon), self.config.radius_miles))
-        pass
+
+        # Optional Foursquare (only if you toggle it on later)
+        if self.config.use_foursquare and FOURSQUARE_API_KEY:
+            providers.append(FoursquareProvider(FOURSQUARE_API_KEY, (self.base_lat, self.base_lon), self.config.radius_miles))
+
+        # NEW: USAspending
+        if self.config.use_usaspending:
+            providers.append(
+                USASpendingProvider(
+                    state=self.config.usaspending_state,
+                    city=self.config.usaspending_city,
+                    zip5=self.config.usaspending_zip5,
+                    fy_from=self.config.usaspending_fy_from,
+                    fy_to=self.config.usaspending_fy_to,
+                    keywords=self.config.usaspending_keywords,
+                    award_type_codes=self.config.usaspending_award_types,
+                )
+            )
 
         all_queries = self._domain_queries(self.config.base_location) + self._prime_queries(self.config.base_location)
 
@@ -780,7 +953,11 @@ class EnhancedNavalSearcher:
             status.write(f"Searching ({i}/{len(all_queries)}): {q}")
             for p in providers:
                 try:
-                    hits = p.search(q)
+                    # 👇 USASpending has no free-text query; call without args
+                    if isinstance(p, USASpendingProvider):
+                        hits = p.search()
+                    else:
+                        hits = p.search(q)
                     for h in hits:
                         h["_q"] = q
                         results_raw.append(h)
@@ -801,6 +978,8 @@ class EnhancedNavalSearcher:
                 norm = self._normalize_google(raw, query=q)
             elif prov == "foursquare":
                 norm = self._normalize_foursquare(raw, query=q)
+            elif prov == "usaspending":
+                norm = self._normalize_usaspending(raw)
             else:
                 norm = None
             if norm:
@@ -811,13 +990,15 @@ class EnhancedNavalSearcher:
         unique: List[Dict] = []
         seen = set()
         for r in normalized:
-            key = (r.get("name","").lower().strip(), round(r.get("lat",0.0),3), round(r.get("lon",0.0),3))
-            if key in seen: continue
+            key = (
+                r.get("name","").lower().strip(), round(r.get("lat",0.0),3), round(r.get("lon",0.0),3), r.get("location","").lower().strip(), r.get("usaspending_agency","").lower().strip())
+            if key in seen: 
+                continue
             seen.add(key)
             unique.append(r)
 
         # POC enrichment for primes
-        self.enrich_primes_with_pocs(unique)
+        self.enrich_primes_with_pocs([r for r in unique if r.get("is_prime_office") and str(r.get("website","")).startswith("http")])
 
         # SAM.gov enrichment (toggle)
         if self.config.use_samgov and SAM_API_KEY:
@@ -922,13 +1103,14 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
     Prefers openpyxl (styled). Falls back to xlsxwriter if openpyxl is missing.
     Returns bytes, or None if neither engine is available.
     """
-    # Ensure all expected columns exist
     cols = [
         'name','location','distance_miles','size','industry','total_score','microelectronics_score',
         'naval_score','defense_score','manufacturing_score','rating','user_ratings_total',
         'phone','website','is_prime_office','poc_emails','poc_emails_backup','poc_contacts',
-        'sam_active','sam_uei','sam_cage'
+        'sam_active','sam_uei','sam_cage',
+        'usaspending_award_amount','usaspending_agency','usaspending_award_type','is_gov_contractor',
     ]
+
     for c in cols:
         if c not in df.columns:
             if c in ('phone','website'): df[c] = 'Not available'
@@ -944,7 +1126,9 @@ def export_xlsx(df: pd.DataFrame) -> Optional[bytes]:
         'defense_score':'Defense Score','manufacturing_score':'Manufacturing Score',
         'rating':'Rating','user_ratings_total':'Review Count','phone':'Phone','website':'Website',
         'is_prime_office':'Prime Office','poc_emails':'POC Emails','poc_emails_backup':'POC Emails (Backup)',
-        'poc_contacts':'POC Contacts','sam_active':'SAM Active','sam_uei':'SAM UEI','sam_cage':'CAGE'
+        'poc_contacts':'POC Contacts','sam_active':'SAM Active','sam_uei':'SAM UEI','sam_cage':'CAGE', 
+        'usaspending_award_amount':'Award Amount ($)', 'usaspending_agency':'Awarding Agency',
+        'usaspending_award_type':'Award Type', 'is_gov_contractor':'Gov Contractor',
     })
 
     def _flatten(v):
@@ -1068,6 +1252,24 @@ def main():
     config.use_foursquare = False
     config.use_samgov = st.sidebar.checkbox("SAM.gov enrichment", value=True and bool(SAM_API_KEY), help="Adds SAM active/UEI/CAGE if SAM_API_KEY is set")
 
+    st.sidebar.subheader("USAspending (Gov Contractors)")
+    config.use_usaspending = st.sidebar.checkbox("Enable USAspending.gov", value=True, help="Pull contractors by place of performance")
+
+    colA, colB = st.sidebar.columns(2)
+    with colA:
+        config.usaspending_state = st.text_input("State (POPS)", value="VA").strip().upper()
+    with colB:
+        config.usaspending_zip5 = st.text_input("ZIP5 (optional)", value="").strip()
+
+    config.usaspending_city = st.text_input("City (optional)", value="").strip()
+    config.usaspending_keywords = st.text_input("Keywords (comma-separated)", value="ship, naval, electronics, cnc").strip()
+
+    fyA, fyB = st.sidebar.columns(2)
+    with fyA:
+        config.usaspending_fy_from = st.number_input("FY From", min_value=2008, max_value=datetime.now().year, value=2021, step=1)
+    with fyB:
+        config.usaspending_fy_to = st.number_input("FY To", min_value=2008, max_value=datetime.now().year, value=datetime.now().year, step=1)
+
     with st.sidebar:
         st.markdown("---")
         run = st.button("🔍 Run Search", type="primary")
@@ -1118,11 +1320,15 @@ def main():
         with c4: size_filter = st.selectbox("Company Size", ["All","Small Business","Small-Medium Business","Medium Business","Large Corporation","Fortune 500 / Major Corporation"])
         with c5: primes_only = st.checkbox("Only Prime Offices", value=False)
 
+        gov_only = st.checkbox("Only Gov Contractors (USAspending)", value=False)
+
         filtered = [c for c in data if c["total_score"]>=min_total and c["microelectronics_score"]>=min_micro and c["naval_score"]>=min_naval]
         if size_filter!="All":
             filtered = [c for c in filtered if c["size"]==size_filter]
         if primes_only:
             filtered = [c for c in filtered if c.get("is_prime_office")]
+        if gov_only:
+            filtered = [c for c in filtered if c.get("is_gov_contractor")]
 
         st.info(f"Showing {len(filtered)} of {len(data)} entities")
         if not filtered:
