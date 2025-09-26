@@ -5,6 +5,7 @@ import re
 import io
 import time
 import json
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
@@ -1324,10 +1325,16 @@ def main():
         st.session_state.companies = []
 
     if st.session_state.search_triggered:
-        with st.spinner("Running multi-source search (Google/Foursquare) and enriching POCs/SAM…"):
+        with st.spinner("Running multi-source search (Google/Foursquare/USAspending) and enriching POCs/SAM…"):
             searcher = EnhancedNavalSearcher(config)
-            data = searcher.run()
-            st.session_state.companies = data
+            try:
+                data = searcher.run()
+                st.session_state.companies = data
+            except Exception as e:
+                st.error("💥 A runtime error occurred. Details below:")
+                st.exception(e)  # nice traceback panel
+                st.code(traceback.format_exc())  # full text traceback
+                st.session_state.companies = []
         st.session_state.search_triggered = False
 
     data = st.session_state.companies
