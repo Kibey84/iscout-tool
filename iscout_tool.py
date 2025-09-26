@@ -922,131 +922,131 @@ class EnhancedNavalSearcher:
             return out
 
     # ---------- Public entry ----------
-def run(self) -> List[Dict]:
-    # --- Provider setup: split into query-based vs bulk ---
-    query_providers: List = []   # expect .search(query: str)
-    bulk_providers: List = []    # expect .search() (no query)
+    def run(self) -> List[Dict]:
+        # --- Provider setup: split into query-based vs bulk ---
+        query_providers: List = []   # expect .search(query: str)
+        bulk_providers: List = []    # expect .search() (no query)
 
-    if self.config.use_google:
-        g_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
-        if not g_key:
-            st.error("🔑 Google Places API key is REQUIRED when Google is enabled.")
-            return []
-        query_providers.append(
-            GoogleProvider(g_key, (self.base_lat, self.base_lon), self.config.radius_miles)
-        )
-
-    if self.config.use_foursquare and FOURSQUARE_API_KEY:
-        query_providers.append(
-            FoursquareProvider(FOURSQUARE_API_KEY, (self.base_lat, self.base_lon), self.config.radius_miles)
-        )
-
-    if self.config.use_usaspending:
-        bulk_providers.append(
-            USASpendingProvider(
-                state=self.config.usaspending_state,
-                city=self.config.usaspending_city,
-                zip5=self.config.usaspending_zip5,
-                fy_from=self.config.usaspending_fy_from,
-                fy_to=self.config.usaspending_fy_to,
-                keywords=self.config.usaspending_keywords,
-                award_type_codes=self.config.usaspending_award_types,
+        if self.config.use_google:
+            g_key = st.session_state.get("api_key", GOOGLE_PLACES_API_KEY)
+            if not g_key:
+                st.error("🔑 Google Places API key is REQUIRED when Google is enabled.")
+                return []
+            query_providers.append(
+                GoogleProvider(g_key, (self.base_lat, self.base_lon), self.config.radius_miles)
             )
+
+        if self.config.use_foursquare and FOURSQUARE_API_KEY:
+            query_providers.append(
+                FoursquareProvider(FOURSQUARE_API_KEY, (self.base_lat, self.base_lon), self.config.radius_miles)
+            )
+
+        if self.config.use_usaspending:
+            bulk_providers.append(
+                USASpendingProvider(
+                    state=self.config.usaspending_state,
+                    city=self.config.usaspending_city,
+                    zip5=self.config.usaspending_zip5,
+                    fy_from=self.config.usaspending_fy_from,
+                    fy_to=self.config.usaspending_fy_to,
+                    keywords=self.config.usaspending_keywords,
+                    award_type_codes=self.config.usaspending_award_types,
+                )
+            )
+
+        all_queries = (
+            self._domain_queries(self.config.base_location)
+            + self._prime_queries(self.config.base_location)
         )
 
-    all_queries = (
-        self._domain_queries(self.config.base_location)
-        + self._prime_queries(self.config.base_location)
-    )
+        progress = st.progress(0.0)
+        status = st.empty()
+        results_raw: List[Dict] = []
 
-    progress = st.progress(0.0)
-    status = st.empty()
-    results_raw: List[Dict] = []
+        # --- 1) Query-based providers (Google/Foursquare) ---
+        total_steps = max(1, len(all_queries)) + len(bulk_providers)
+        step = 0
+        for i, q in enumerate(all_queries, start=1):
+            status.write(f"Searching ({i}/{len(all_queries)}): {q}")
+            for p in query_providers:
+                try:
+                    hits = p.search(q)
+                    for h in hits:
+                        h["_q"] = q
+                        results_raw.append(h)
+                except Exception as ex:
+                    st.caption(f"ℹ️ Provider error: {ex}")
+            step += 1
+            progress.progress(step / total_steps)
+            time.sleep(0.2)
 
-    # --- 1) Query-based providers (Google/Foursquare) ---
-    total_steps = max(1, len(all_queries)) + len(bulk_providers)
-    step = 0
-    for i, q in enumerate(all_queries, start=1):
-        status.write(f"Searching ({i}/{len(all_queries)}): {q}")
-        for p in query_providers:
+        # --- 2) Bulk providers (USAspending) — called once each ---
+        for p in bulk_providers:
+            status.write("Searching (USAspending.gov)")
             try:
-                hits = p.search(q)
+                hits = p.search()  # no query argument
                 for h in hits:
-                    h["_q"] = q
+                    h["_q"] = "USAspending"
                     results_raw.append(h)
             except Exception as ex:
                 st.caption(f"ℹ️ Provider error: {ex}")
-        step += 1
-        progress.progress(step / total_steps)
-        time.sleep(0.2)
+            step += 1
+            progress.progress(step / total_steps)
 
-    # --- 2) Bulk providers (USAspending) — called once each ---
-    for p in bulk_providers:
-        status.write("Searching (USAspending.gov)")
-        try:
-            hits = p.search()  # no query argument
-            for h in hits:
-                h["_q"] = "USAspending"
-                results_raw.append(h)
-        except Exception as ex:
-            st.caption(f"ℹ️ Provider error: {ex}")
-        step += 1
-        progress.progress(step / total_steps)
+        progress.empty()
+        status.empty()
 
-    progress.empty()
-    status.empty()
+        # --- Normalize ---
+        normalized: List[Dict] = []
+        for item in results_raw:
+            prov = item.get("_provider")
+            raw = item.get("_raw", {})
+            q = item.get("_q", "")
+            if prov == "google":
+                norm = self._normalize_google(raw, query=q)
+            elif prov == "foursquare":
+                norm = self._normalize_foursquare(raw, query=q)
+            elif prov == "usaspending":
+                norm = self._normalize_usaspending(raw)
+            else:
+                norm = None
+            if norm:
+                norm = self._validate_prime_office(norm)
+                normalized.append(norm)
 
-    # --- Normalize ---
-    normalized: List[Dict] = []
-    for item in results_raw:
-        prov = item.get("_provider")
-        raw = item.get("_raw", {})
-        q = item.get("_q", "")
-        if prov == "google":
-            norm = self._normalize_google(raw, query=q)
-        elif prov == "foursquare":
-            norm = self._normalize_foursquare(raw, query=q)
-        elif prov == "usaspending":
-            norm = self._normalize_usaspending(raw)
-        else:
-            norm = None
-        if norm:
-            norm = self._validate_prime_office(norm)
-            normalized.append(norm)
+        # --- De-dup (name + rounded coords + location + agency for USAspending rows) ---
+        unique: List[Dict] = []
+        seen = set()
+        for r in normalized:
+            key = (
+                (r.get("name", "").lower().strip()),
+                round(float(r.get("lat", 0.0) or 0.0), 3),
+                round(float(r.get("lon", 0.0) or 0.0), 3),
+                (r.get("location", "").lower().strip()),
+                (r.get("usaspending_agency", "").lower().strip()),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(r)
 
-    # --- De-dup (name + rounded coords + location + agency for USAspending rows) ---
-    unique: List[Dict] = []
-    seen = set()
-    for r in normalized:
-        key = (
-            (r.get("name", "").lower().strip()),
-            round(float(r.get("lat", 0.0) or 0.0), 3),
-            round(float(r.get("lon", 0.0) or 0.0), 3),
-            (r.get("location", "").lower().strip()),
-            (r.get("usaspending_agency", "").lower().strip()),
+        # --- POC enrichment for primes (only if we have a usable website) ---
+        self.enrich_primes_with_pocs(
+            [r for r in unique if r.get("is_prime_office") and str(r.get("website", "")).startswith("http")]
         )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(r)
 
-    # --- POC enrichment for primes (only if we have a usable website) ---
-    self.enrich_primes_with_pocs(
-        [r for r in unique if r.get("is_prime_office") and str(r.get("website", "")).startswith("http")]
-    )
+        # --- SAM.gov enrichment (toggle) ---
+        if self.config.use_samgov and SAM_API_KEY:
+            for r in unique:
+                loc = r.get("location", "")
+                zip_m = re.search(r'\b(\d{5})(?:-\d{4})?\b', loc)
+                zipcode = zip_m.group(1) if zip_m else None
+                info = self._sam_lookup(r.get("name", ""), zipcode)
+                r.update({k: v for k, v in info.items() if v is not None})
 
-    # --- SAM.gov enrichment (toggle) ---
-    if self.config.use_samgov and SAM_API_KEY:
-        for r in unique:
-            loc = r.get("location", "")
-            zip_m = re.search(r'\b(\d{5})(?:-\d{4})?\b', loc)
-            zipcode = zip_m.group(1) if zip_m else None
-            info = self._sam_lookup(r.get("name", ""), zipcode)
-            r.update({k: v for k, v in info.items() if v is not None})
-
-    # --- sort & limit ---
-    unique.sort(key=lambda x: x["total_score"], reverse=True)
-    return unique[: self.config.target_company_count]
+        # --- sort & limit ---
+        unique.sort(key=lambda x: x["total_score"], reverse=True)
+        return unique[: self.config.target_company_count]
 
 # --- Visualization & metrics ---
 def company_map(data: List[Dict], base_location: str):
